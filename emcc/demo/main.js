@@ -14,12 +14,15 @@ libopus.onload = function(){
     for(var k = 0; k < dataSize; k++) {
         samples[k] = Math.random()*30000;
     }
+    enc.setBitrate(64000);
     enc.input(samples);
     var frame = enc.output();
+    console.log("encode size: ", frame.length);
 
     var count = 10;
     var debug = (count <= 10);
     enc.setComplexity(5);
+    enc.setBitrate(8000);
     console.log("test count:", count);
 
     var fnCheckExit = function() {

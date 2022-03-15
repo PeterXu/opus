@@ -28,8 +28,19 @@ public:
 
     void set_complexity(long int complexity)
     {
-        if (m_enc) {
+        if (m_enc != NULL) {
             opus_encoder_ctl(m_enc, OPUS_SET_COMPLEXITY(complexity));
+        }
+    }
+
+    void set_bitrate(long int bitrate)
+    {
+        if (m_enc != NULL){
+            if (bitrate <= 0) {
+                opus_encoder_ctl(m_enc, OPUS_SET_BITRATE(OPUS_BITRATE_MAX));
+            } else {
+                opus_encoder_ctl(m_enc, OPUS_SET_BITRATE(bitrate));
+            }
         }
     }
 
@@ -174,6 +185,12 @@ EMSCRIPTEN_KEEPALIVE
 void Encoder_setComplexity(Encoder *self, int complexity)
 {
     self->set_complexity(complexity);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void Encoder_setBitrate(Encoder *self, int bitrate)
+{
+    self->set_bitrate(bitrate);
 }
 
 EMSCRIPTEN_KEEPALIVE

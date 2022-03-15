@@ -25,6 +25,12 @@ Encoder.prototype.setComplexity = function(complexity)
     Module._Encoder_setComplexity(this.enc, complexity);
 }
 
+// set bitrate: 0 is auto-detect.
+Encoder.prototype.setBitrate = function(bitrate)
+{
+    Module._Encoder_setBitrate(this.enc, bitrate);
+}
+
 // add samples to the encoder buffer
 // @param samples: Int16Array of interleaved (if multiple channels) samples
 Encoder.prototype.input = function(samples)
