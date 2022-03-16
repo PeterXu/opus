@@ -1,12 +1,21 @@
-// Encoder
+/// Consts
+
+Module.Consts = {
+    OPUS: 1,
+    PCMA: 2,
+    PCMU: 3,
+};
+
+/// Encoder
 
 // create encoder
-// @param channels: 1-2
-// @param samplerate: 8000,12000,16000,24000,48000
-// @param bitrate: see Opus recommended bitrates (bps)
+// @param codec: opus/pcma/pcmu
 // @param frame_size: frame size in milliseconds (2.5,5,10,20,40,60), 20 is recommended
-// @param is_voip: true(voip)/false(audio)
-function Encoder(channels, samplerate, bitrate, frame_size, is_voip)
+// @param samplerate: 8000,12000,16000,24000,48000 [g711 unsupport]
+// @param channels: 1-2, [g711 unsupport]
+// @param bitrate: see Opus recommended bitrates (bps), [g711 unsupport]
+// @param is_voip: true(voip)/false(audio), [g711 unsupport]
+function Encoder(codec, frame_size, samplerate, channels, bitrate, is_voip)
 {
     this.enc = Module._Encoder_new.apply(null, arguments);
     this.out = Module._String_new();
@@ -56,11 +65,13 @@ Encoder.prototype.output = function()
 }
 
 
-// Decoder
+/// Decoder
 
 // create decoder
-// @param channels and samplerate should match the encoder options
-function Decoder(channels, samplerate)
+// @param codec: opus/pcma/pcmu
+// @param samplerate: should match the encoder options, [g711 unsupport]
+// @param channels: should match the encoder options, [g711 unsupport]
+function Decoder(codec, samplerate, channels)
 {
     this.dec = Module._Decoder_new.apply(null, arguments);
     this.out = Module._Int16Array_new();
@@ -104,5 +115,5 @@ Module.Decoder = Decoder;
 
 //make the module global if not using nodejs
 if (Module["ENVIRONMENT"] != "NODE") {
-    libopus = Module;
+    libac = Module;
 }

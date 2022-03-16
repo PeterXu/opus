@@ -6,8 +6,8 @@ Module["onRuntimeInitialized"] = function(){
 }
 
 Module["locateFile"] = function(url){
-    if(url == "libopus.wasm" && typeof LIBOPUS_WASM_URL != "undefined") {
-        return LIBOPUS_WASM_URL;
+    if(url == "libac.wasm" && typeof LIBAC_WASM_URL != "undefined") {
+        return LIBAC_WASM_URL;
     } else {
         return url;
     }

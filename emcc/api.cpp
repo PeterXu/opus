@@ -1,20 +1,124 @@
-#include <emscripten.h>
-#include <opus.h>
-#include <stdint.h>
 #include <iostream>
 #include <vector>
+#include <deque>
+#include <stdint.h>
+
+#include <emscripten.h>
+#include <opus.h>
+#include <g711/g711_interface.h>
 
 typedef std::string String;
 typedef std::vector<int16_t> Int16Array;
+typedef std::vector<uint8_t> Uint8Array;
+
+#define LOGI(...) std::cout<<__VA_ARGS__<<std::endl
+#define LOGE(...) std::cerr<<__VA_ARGS__<<std::endl
+
+enum Codecs {
+    OPUS = 1,
+    PCMA = 2,
+    PCMU = 3,
+};
+static String kCodecs[] = {
+    "opus",
+    "pcma",
+    "pcmu",
+};
+static String codecName(int idx) {
+    if (idx > 0 && idx <= 3) {
+        return kCodecs[idx-1];
+    } else {
+        return "unknown";
+    }
+}
+
+
+/// audio encoder
 
 class Encoder {
 public:
-    Encoder(int channels, long int samplerate, long int bitrate, float frame_size, bool is_voip)
-        : m_enc(NULL), m_samplerate(samplerate), m_channels(channels), m_bitrate(bitrate), m_frame_size(frame_size)
+    Encoder(int codec, int sampleRate, int channels, int bitrate, float frameSize)
+        : m_codec(codec),
+        m_sampleRate(sampleRate), m_channels(channels), m_bitrate(bitrate), m_frameSize(frameSize)
+    {}
+    virtual ~Encoder() {
+        m_samples.clear();
+    }
+    virtual void set_complexity(int complexity) {}
+    virtual void set_bitrate(int bitrate) {}
+    virtual void input(const int16_t *data, int size) {
+        Int16Array samples(data, data+size);
+        m_samples.push_back(samples);
+    }
+    virtual bool output(String *out) {
+        if (m_samples.empty()) {
+            return false;
+        }
+
+        size_t sampleSize = getRawSampleSize();
+        std::deque<Int16Array>::reference sample = m_samples.front();
+        if (sampleSize > sample.size()) {
+            m_samples.pop_front();
+            return false;
+        }
+
+        size_t bufferSize = getMaxEncodedSize();
+        uint8_t *buffer = new uint8_t[bufferSize];
+        size_t iret = encodePacket(sample, sampleSize, buffer, bufferSize);
+        if (iret > 0) {
+            out->assign((char *)buffer, iret);
+        }
+
+        delete [] buffer;
+        m_samples.pop_front();
+        return (iret > 0);
+    }
+
+protected:
+    virtual size_t getRawSampleSize() {
+        return static_cast<size_t>(m_sampleRate/1000.0*m_frameSize*m_channels);
+    }
+    virtual size_t getMaxEncodedSize() {
+        return getRawSampleSize() * 2;
+    }
+    virtual size_t encodePacket(Int16Array &sample, int sampleSize, uint8_t *buffer, size_t bufferSize) = 0;
+
+protected:
+    int m_codec;
+    int m_sampleRate; // HZ
+    int m_channels;
+    int m_bitrate; // bps
+    float m_frameSize; //ms
+
+private:
+    std::deque<Int16Array> m_samples;
+};
+
+class CG711Encoder : public Encoder {
+public:
+    CG711Encoder(int codec, float frameSize) : Encoder(codec, 8000, 1, 0, frameSize)
+    {}
+    virtual ~CG711Encoder() {}
+    virtual size_t encodePacket(Int16Array &sample, int sampleSize, uint8_t *buffer, size_t bufferSize)
     {
-        int err;
-        int application = (is_voip ? OPUS_APPLICATION_VOIP : OPUS_APPLICATION_AUDIO);
-        m_enc = opus_encoder_create(samplerate, channels, application, &err);
+        size_t iret = 0;
+        if (m_codec == PCMA) {
+            iret = WebRtcG711_EncodeA(&(sample[0]), sample.size(), buffer);
+        } else {
+            iret = WebRtcG711_EncodeU(&(sample[0]), sample.size(), buffer);
+        }
+        return iret;
+    }
+};
+
+class COpusEncoder : public Encoder {
+public:
+    COpusEncoder(float frameSize, int sampleRate, int channels, int bitrate, bool isVoip)
+        : Encoder(OPUS, sampleRate, channels, bitrate, frameSize), m_enc(NULL)
+    {
+        int err = 0;
+        int application = (isVoip ? OPUS_APPLICATION_VOIP : OPUS_APPLICATION_AUDIO);
+        m_enc = opus_encoder_create(sampleRate, channels, application, &err);
         if (m_enc != NULL){
             if (bitrate <= 0) {
                 opus_encoder_ctl(m_enc, OPUS_SET_BITRATE(OPUS_BITRATE_MAX));
@@ -22,18 +126,23 @@ public:
                 opus_encoder_ctl(m_enc, OPUS_SET_BITRATE(bitrate));
             }
         } else {
-            std::cerr << "[libopusjs] error while creating opus encoder: " << err << std::endl;
+            LOGE("[opus-enc] error while creating opus encoder: "<<err);
         }
     }
-
-    void set_complexity(long int complexity)
+    virtual ~COpusEncoder()
+    {
+        if (m_enc) {
+            opus_encoder_destroy(m_enc);
+            m_enc = NULL;
+        }
+    }
+    virtual void set_complexity(int complexity)
     {
         if (m_enc != NULL) {
             opus_encoder_ctl(m_enc, OPUS_SET_COMPLEXITY(complexity));
         }
     }
-
-    void set_bitrate(long int bitrate)
+    virtual void set_bitrate(int bitrate)
     {
         if (m_enc != NULL){
             if (bitrate <= 0) {
@@ -43,125 +152,121 @@ public:
             }
         }
     }
-
-    void input(const int16_t *data, int size)
-    {
-        std::vector<int16_t> samples(data, data+size);
-        m_samples.insert(m_samples.end(), samples.begin(), samples.end());
-    }
-
-    size_t SufficientOutputBufferSize()
+    virtual size_t getMaxEncodedSize()
     {
         // Calculate the number of bytes we expect the encoder to produce,
         // then multiply by two to give a wide margin for error.
         const size_t bytes_per_ms = static_cast<size_t>(m_bitrate/(1000*8) + 1);
-        const size_t num_10ms_frames_per_packet = static_cast<size_t>(m_frame_size / 10);
+        const size_t num_10ms_frames_per_packet = static_cast<size_t>(m_frameSize / 10);
         const size_t approx_encoded_bytes = num_10ms_frames_per_packet * 10 * bytes_per_ms;
         return 2 * approx_encoded_bytes;
     }
-
-    size_t GetRawSampleSize()
+    virtual size_t encodePacket(Int16Array &sample, int sampleSize, uint8_t *buffer, size_t bufferSize)
     {
-        return static_cast<size_t>(m_samplerate*m_frame_size*m_channels/1000.0);
-    }
-
-    bool output(String *out)
-    {
-        if (!m_enc || !out) {
-            return false;
-        }
-
-        long int sample_size = GetRawSampleSize();
-        if (sample_size <= 0 || sample_size > m_samples.size()) {
-            return false;
-        }
-
-        size_t max_size = SufficientOutputBufferSize();
-        uint8_t *buffer = new uint8_t[max_size];
-
-        long int iret = opus_encode(m_enc, &m_samples[0], sample_size/m_channels, buffer, max_size);
-        if (iret > 0) {
-            out->assign((char *)buffer, iret);
-        }
-
-        delete [] buffer;
-        m_samples.erase(m_samples.begin(), m_samples.begin() + sample_size);
-
-        return (iret > 0);
-    }
-
-    ~Encoder()
-    {
+        size_t iret = 0;
         if (m_enc) {
-            opus_encoder_destroy(m_enc);
-            m_enc = NULL;
+            iret = opus_encode(m_enc, &sample[0], sampleSize/m_channels, buffer, bufferSize);
         }
+        return iret;
     }
 
 private:
-    float m_frame_size; //ms
-    long int m_bitrate; //bps
-    long int m_samplerate;
-    int m_channels;
     OpusEncoder *m_enc;
-    std::vector<int16_t> m_samples;
 };
 
+/// audio decoder
 
 class Decoder {
 public:
-    Decoder(int channels, long int samplerate) : m_dec(NULL), m_samplerate(samplerate), m_channels(channels)
-    {
-        int err;
-        m_dec = opus_decoder_create(samplerate, channels, &err);
-        if (m_dec == NULL) {
-            std::cerr << "[libopusjs] error while creating opus decoder: " << err << std::endl;
-        }
+    Decoder(int codec, int sampleRate, int channels)
+        : m_codec(codec), m_sampleRate(sampleRate), m_channels(channels)
+    {}
+    virtual ~Decoder() {}
+    virtual void input(const char *data, size_t size) {
+        Uint8Array packet(data, data+size);
+        m_packets.push_back(packet);
     }
-
-    void input(const char *data, size_t size)
+    virtual bool output(Int16Array *out)
     {
-        m_packets.push_back(std::string(data,size));
-    }
-
-    size_t MaxDecodedFrameSizeMs() {
-        return m_samplerate/1000.0*120*m_channels; // 120ms max
-    }
-
-    bool output(Int16Array *out)
-    {
-        if (!m_dec || !out || m_packets.empty()) {
+        if (m_packets.empty()) {
             return false;
         }
 
-        long int buffer_size = MaxDecodedFrameSizeMs();
-        int16_t *buffer = new int16_t[buffer_size];
+        size_t bufferSize = getMaxDecodedSize();
+        int16_t *buffer = new int16_t[bufferSize];
+        std::deque<Uint8Array>::reference packet = m_packets.front();
 
-        std::string &packet = m_packets[0];
-        int iret = opus_decode(m_dec, (const uint8_t*)packet.c_str(), packet.size(), buffer, buffer_size/m_channels, 0);
+        size_t iret = decodePacket(packet, buffer, bufferSize);
         if (iret > 0){
-            *out = std::vector<int16_t>(buffer, buffer+iret*m_channels);
+            *out = Int16Array(buffer, buffer+iret);
         }
 
-        m_packets.erase(m_packets.begin());
-        delete [] buffer;
-
+        m_packets.pop_front();
+        delete []buffer;
         return (iret > 0);
     }
 
-    ~Decoder()
+protected:
+    virtual size_t getMaxDecodedSize() {
+        return m_sampleRate/1000.0*120*m_channels; // using 120ms max.
+    }
+    virtual size_t decodePacket(Uint8Array &packet, int16_t *buffer, size_t buffer_size) = 0;
+
+protected:
+    int m_codec;
+    int m_sampleRate;
+    int m_channels;
+
+private:
+    std::deque<Uint8Array> m_packets;
+};
+
+class CG711Decoder : public Decoder {
+public:
+    CG711Decoder(int codec) : Decoder(codec, 8000, 1) {}
+    virtual ~CG711Decoder() {}
+    virtual size_t decodePacket(Uint8Array &packet, int16_t *buffer, size_t bufferSize)
+    {
+        int16_t iret = 0;
+        int16_t speechType = 0;
+        if (m_codec == PCMA) {
+            iret = WebRtcG711_DecodeA(&packet[0], packet.size(), buffer, &speechType);
+        } else {
+            iret = WebRtcG711_DecodeU(&packet[0], packet.size(), buffer, &speechType);
+        }
+        return size_t(iret);
+    }
+};
+
+class COpusDecoder : public Decoder {
+public:
+    COpusDecoder(int sampleRate, int channels)
+        : Decoder(OPUS, sampleRate, channels), m_dec(NULL)
+    {
+        int err = 0;
+        m_dec = opus_decoder_create(sampleRate, channels, &err);
+        if (m_dec == NULL) {
+            LOGE("[opus-dec] error while creating opus decoder: "<<err);
+        }
+    }
+    virtual ~COpusDecoder()
     {
         if (m_dec) {
             opus_decoder_destroy(m_dec);
             m_dec = NULL;
         }
     }
+    virtual size_t decodePacket(Uint8Array &packet, int16_t *buffer, size_t bufferSize)
+    {
+        int iret = 0;
+        if (m_dec) {
+            iret = opus_decode(m_dec, &packet[0], packet.size(), buffer, bufferSize/m_channels, 0);
+        }
+        return size_t(iret);
+    }
 
 private:
-    long int m_samplerate;
-    int m_channels;
     OpusDecoder *m_dec;
-    std::vector<std::string> m_packets;
 };
 
 
@@ -170,9 +275,16 @@ extern "C"{
 // Encoder
 
 EMSCRIPTEN_KEEPALIVE
-Encoder* Encoder_new(int channels, long int samplerate, long int bitrate, float frame_size, bool is_voip)
+Encoder* Encoder_new(int codec, float frameSize, int sampleRate, int channels, int bitrate, bool isVoip)
 {
-    return new Encoder(channels, samplerate, bitrate, frame_size, is_voip);
+    LOGI("Encoder_new, "<<codecName(codec)<<","<<frameSize<<"ms,"<<sampleRate<<"/"<<channels<<","<<bitrate<<"bps,"<<isVoip);
+    Encoder *self = NULL;
+    if (codec == OPUS) {
+        self = new COpusEncoder(frameSize, sampleRate, channels, bitrate, isVoip);
+    } else if (codec == PCMU || codec == PCMA) {
+        self = new CG711Encoder(codec, frameSize);
+    }
+    return self;
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -184,33 +296,41 @@ void Encoder_delete(Encoder *self)
 EMSCRIPTEN_KEEPALIVE
 void Encoder_setComplexity(Encoder *self, int complexity)
 {
-    self->set_complexity(complexity);
+    if (self) self->set_complexity(complexity);
 }
 
 EMSCRIPTEN_KEEPALIVE
 void Encoder_setBitrate(Encoder *self, int bitrate)
 {
-    self->set_bitrate(bitrate);
+    if (self) self->set_bitrate(bitrate);
 }
 
 EMSCRIPTEN_KEEPALIVE
 void Encoder_input(Encoder *self, const int16_t *data, int size)
 {
-    self->input(data, size);
+    if (self) self->input(data, size);
 }
 
 EMSCRIPTEN_KEEPALIVE
 bool Encoder_output(Encoder *self, String *out)
 {
-    return self->output(out);
+    if (self) return self->output(out);
+    else return false;
 }
 
 // Decoder
 
 EMSCRIPTEN_KEEPALIVE
-Decoder* Decoder_new(int channels, long int samplerate)
+Decoder* Decoder_new(int codec, int sampleRate, int channels)
 {
-    return new Decoder(channels, samplerate);
+    LOGI("Decoder_new, "<<codecName(codec)<<","<<sampleRate<<"/"<<channels);
+    Decoder *self = NULL;
+    if (codec == OPUS) {
+        self = new COpusDecoder(sampleRate, channels);
+    } else if (codec == PCMU || codec == PCMA) {
+        self = new CG711Decoder(codec);
+    } 
+    return self;
 }
 
 EMSCRIPTEN_KEEPALIVE

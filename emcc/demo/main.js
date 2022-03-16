@@ -1,13 +1,14 @@
-if(typeof require != "undefined" && typeof libopus == "undefined"){
-    LIBOPUS_WASM_URL = "../libopus.wasm";
-    libopus = require("../libopus.js");
+if(typeof require != "undefined" && typeof libac == "undefined"){
+    LIBAC_WASM_URL = "../libac.wasm";
+    libac = require("../libac.js");
 }
 
-libopus.onload = function(){
+libac.onload = function(){
     var start = new Date().getTime();
     var channels = 1;
-    var enc = new libopus.Encoder(channels,48000,8000,20,false);
-    var dec = new libopus.Decoder(channels,48000);
+    var codec = libac.Consts.OPUS;
+    var enc = new libac.Encoder(codec,20,48000,channels,8000,true);
+    var dec = new libac.Decoder(codec,48000,channels);
 
     var dataSize = 960 * channels; // 1 sample: 48*20ms
     var samples = new Int16Array(dataSize);
@@ -17,6 +18,10 @@ libopus.onload = function(){
     enc.setBitrate(64000);
     enc.input(samples);
     var frame = enc.output();
+    if (!frame) {
+        console.log("no encoding output");
+        return;
+    }
     console.log("encode size: ", frame.length);
 
     var count = 10;
@@ -64,6 +69,6 @@ libopus.onload = function(){
 }
 
 //if using asm.js, already loaded, force onload
-if (libopus.loaded) {
-    libopus.onload();
+if (libac.loaded) {
+    libac.onload();
 }
