@@ -46,10 +46,6 @@ specification by other means.
 #ifndef MODULES_THIRD_PARTY_G711_G711_H_
 #define MODULES_THIRD_PARTY_G711_G711_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdint.h>
 
 #if defined(__i386__)
@@ -343,8 +339,5 @@ uint8_t alaw_to_ulaw(uint8_t alaw);
 */
 uint8_t ulaw_to_alaw(uint8_t ulaw);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* MODULES_THIRD_PARTY_G711_G711_H_ */

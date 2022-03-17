@@ -17,9 +17,6 @@
 #define G711_WEBRTC_SPEECH 1
 #define G711_WEBRTC_CNG 2
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /****************************************************************************
  * WebRtcG711_EncodeA(...)
@@ -128,8 +125,5 @@ size_t WebRtcG711_DecodeU(const uint8_t* encoded,
 
 int16_t WebRtcG711_Version(char* version, int16_t lenBytes);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // MODULES_AUDIO_CODING_CODECS_G711_G711_INTERFACE_H_

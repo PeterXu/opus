@@ -1,10 +1,34 @@
-/// Consts
-
-Module.Consts = {
+/// codec list
+var Consts = {
     OPUS: 1,
     PCMA: 2,
     PCMU: 3,
 };
+Module.Consts = Consts;
+
+/// create encoders
+Module.CreateOpusEncoder = function(frame_size, samplerate, channels, bitrate, is_voip) {
+    return new Encoder(Consts.OPUS, frame_size, samplerate, channels, bitrate, is_voip);
+}
+Module.CreatePcmaEncoder = function(frame_size) {
+    return new Encoder(Consts.PCMA, frame_size);
+}
+Module.CreatePcmuEncoder = function(frame_size) {
+    return new Encoder(Consts.PCMU, frame_size);
+}
+
+// create decoders
+Module.CreateOpusDecoder = function(samplerate, channels) {
+    return new Decoder(Consts.OPUS, samplerate, channels);
+}
+Module.CreatePcmaDecoder = function() {
+    return new Decoder(Consts.PCMA);
+}
+Module.CreatePcmuDecoder = function() {
+    return new Decoder(Consts.PCMU);
+}
+
+
 
 /// Encoder
 
@@ -38,6 +62,11 @@ Encoder.prototype.setComplexity = function(complexity)
 Encoder.prototype.setBitrate = function(bitrate)
 {
     Module._Encoder_setBitrate(this.enc, bitrate);
+}
+
+Encoder.prototype.setInputParameters = function(samplerate, channels)
+{
+    Module._Encoder_setInputParameters(this.enc, samplerate, channels);
 }
 
 // add samples to the encoder buffer
@@ -82,6 +111,11 @@ Decoder.prototype.destroy = function()
 { 
     Module._Decoder_delete(this.dec); 
     Module._Int16Array_delete(this.out);
+}
+
+Decoder.prototype.setOutputParameters = function(samplerate, channels)
+{
+    Module._Decoder_setOutputParameters(this.dec, samplerate, channels);
 }
 
 // add packet to the decoder buffer
