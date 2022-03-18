@@ -23,18 +23,22 @@ public:
             m_enc = CreateEncoder(codec, frameSize, sampleRate, channels, bitrate, isVoip);
             m_frame_size = frameSize;
             m_delta_ts = sampleRate/1000*frameSize*channels;
+            LOGI("[local] set frame-size="<<frameSize<<", delta-ts="<<m_delta_ts);
         } else {
             LOGE("[local] invalid codec="<<codec);
         }
     }
     void set_codec_bitrate(int bitrate) {
+        LOGI("[local] set bitrate="<<bitrate);
         if (m_enc) m_enc->set_bitrate(bitrate);
     }
     void set_rtp_parameters(uint32_t ssrc, int payloadType) {
+        LOGI("[local] set rtp ssrc="<<ssrc<<", ptype="<<payloadType);
         m_ssrc = ssrc;
         m_ptype = payloadType;
     }
     void set_input_parameters(int sampleRate, int channels) {
+        LOGI("[local] set input parameters: "<<sampleRate<<"/"<<channels);
         if (m_enc) m_enc->set_input_parameters(sampleRate, channels);
     }
     void input(const int16_t *data, int size) {
@@ -66,18 +70,19 @@ public:
 private:
     uint32_t gen_timestamp() {
         int64_t now = NowMs();
-        if (m_timestamp == 0) {
-            m_timestamp = RandTimestamp();
-        }
-        if (m_last_time > 0) {
-            int timeout = m_frame_size*250;
-            if (now >= m_last_time + timeout) {
-                int delta = (now - m_last_time) / m_frame_size;
-                m_timestamp += (delta * m_delta_ts);
+        uint32_t ts = m_timestamp; // last
+        if (ts == 0) {
+            ts = RandTimestamp();
+            LOGI("[local] first timestamp="<<ts);
+        } else {
+            int delta = 1;
+            int timeout = m_frame_size * 250;
+            if (m_last_time > 0 && now >= m_last_time + timeout) {
+                delta = (now - m_last_time) / m_frame_size;
             }
+            ts += (delta * m_delta_ts);
         }
-        uint32_t ts = m_timestamp;
-        m_timestamp += m_delta_ts;
+        m_timestamp = ts;
         m_last_time = now;
         return ts;
     }
