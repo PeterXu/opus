@@ -148,6 +148,144 @@ Decoder.prototype.output = function()
 Module.Encoder = Encoder;
 Module.Decoder = Decoder;
 
+
+
+/// LocalStream
+
+// create local-stream
+function LocalStream()
+{
+    this.stream = Module._LocalStream_new.apply(null, arguments);
+    this.out = Module._String_new();
+}
+
+// free local-stream
+LocalStream.prototype.destroy = function()
+{ 
+    Module._LocalStream_delete(this.stream); 
+    Module._String_delete(this.out);
+}
+
+// set local-stream codec parameters
+// @param codec: opus/pcma/pcmu
+// @param frame_size: frame size in milliseconds (2.5,5,10,20,40,60), 20 is recommended
+// @param samplerate: 8000,12000,16000,24000,48000 [g711 unsupport]
+// @param channels: 1-2, [g711 unsupport]
+// @param bitrate: see Opus recommended bitrates (bps), [g711 unsupport]
+// @param is_voip: true(voip)/false(audio), [g711 unsupport]
+LocalStream.prototype.setCodecParameters = function(codec, frame_size, samplerate, channels, bitrate, is_voip)
+{
+    Module._LocalStream_setCodecParameters(this.stream, codec, frame_size, samplerate, channels, bitrate, is_voip);
+}
+
+// set local-stream codec bitrate: 0 is auto-detect.
+LocalStream.prototype.setCodecBitrate = function(bitrate)
+{
+    Module._LocalStream_setCodecBitrate(this.stream, bitrate);
+}
+
+// set local-stream rtp parameters
+LocalStream.prototype.setRtpParameters = function(ssrc, payloadtype)
+{
+    Module._LocalStream_setRtpParameters(this.stream, ssrc, payloadtype);
+}
+
+// set local-stream input parameters
+LocalStream.prototype.setInputParameters = function(samplerate, channels)
+{
+    Module._LocalStream_setInputParameters(this.stream, samplerate, channels);
+}
+
+// add samples to the local-stream encoder buffer. (samples.BYTES_PER_ELEMENT is 2)
+// @param samples: Int16Array of interleaved (if multiple channels) samples
+LocalStream.prototype.input = function(samples)
+{
+    var nbytes = samples.length*samples.BYTES_PER_ELEMENT;
+    var ptr = Module._malloc(nbytes);
+    var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, nbytes);
+    pdata.set(new Uint8Array(samples.buffer, samples.byteOffset, nbytes));
+
+    Module._LocalStream_input(this.stream, ptr, samples.length);
+    Module._free(ptr);
+}
+
+// output the next encoded packet
+// return Uint8Array (valid until the next output call) or null if there is no packet to output
+LocalStream.prototype.output = function()
+{
+    var ok = Module._LocalStream_output(this.stream, this.out);
+    if (ok) {
+        return new Uint8Array(Module.HEAPU8.buffer, Module._String_data(this.out), Module._String_size(this.out));
+    } else {
+        return null;
+    }
+}
+
+
+/// RemoteStream
+
+// create remote-stream
+function RemoteStream()
+{
+    this.stream = Module._RemoteStream_new.apply(null, arguments);
+    this.out = Module._Int16Array_new();
+}
+
+// free remote-stream
+RemoteStream.prototype.destroy = function()
+{ 
+    Module._RemoteStream_delete(this.stream); 
+    Module._Int16Array_delete(this.out);
+}
+
+// register remote-stream mapping of payload-type => codec.
+// @param payloadtype: 0~127
+// @param codec: opus/pcma/pcmu
+// @param samplerate: should match the encoder options, [g711 unsupport]
+// @param channels: should match the encoder options, [g711 unsupport]
+RemoteStream.prototype.registerPayloadType = function(payloadtype, codec, samplerate, channels)
+{
+    Module._RemoteStream_registerPayloadType(this.stream, payloadtype, codec, samplerate, channels);
+}
+
+// set remote-stream output parameters
+RemoteStream.prototype.setOutputParameters = function(samplerate, channels)
+{
+    Module._RemoteStream_setOutputParameters(this.stream, samplerate, channels);
+}
+
+// add packet to the remote-stream's decoder buffer. (packet.BYTES_PER_ELEMENT is 1)
+// @param packet: Uint8Array
+RemoteStream.prototype.input = function(packet)
+{
+    var nbytes = packet.length*packet.BYTES_PER_ELEMENT;
+    var ptr = Module._malloc(nbytes);
+    var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, nbytes);
+    pdata.set(new Uint8Array(packet.buffer, packet.byteOffset, nbytes));
+
+    Module._RemoteStream_input(this.stream, ptr, packet.length);
+    Module._free(ptr);
+}
+
+// output the next decoded samples
+// return samples (interleaved if multiple channels) as Int16Array (valid until next output call) or null if no output
+RemoteStream.prototype.output = function()
+{
+    var ok = Module._RemoteStream_output(this.stream, this.out);
+    if (ok) {
+        return new Int16Array(Module.HEAPU8.buffer, Module._Int16Array_data(this.out), Module._Int16Array_size(this.out));
+    } else {
+        return null;
+    }
+}
+
+
+//export objects
+Module.LocalStream = LocalStream;
+Module.RemoteStream = RemoteStream;
+
+
+
 //make the module global if not using nodejs
 if (Module["ENVIRONMENT"] != "NODE") {
     libac = Module;

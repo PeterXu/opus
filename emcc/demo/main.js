@@ -131,11 +131,29 @@ function testCodec2(codec1, codec2){
     }, 50);
 }
 
+function testStream1() {
+    var stream = new libac.LocalStream();
+    stream.setCodecParameters(libac.Consts.OPUS, frameSize,sampleRate,channels,8000,true);
+    stream.setRtpParameters(1, 103);
+    stream.setInputParameters(sampleRate, channels);
+    stream.setCodecBitrate(64000)
+
+    stream.input(samples);
+    var data = stream.output();
+    if (data) {
+        console.log("local-stream output rtp:", data.length);
+    } else {
+        console.log("local-stream no output");
+    }
+}
+
 libac.onload = function(){
     //testCodec1("opus");
     //testCodec1("pcma");
     //testCodec2("opus", "opus");
-    testCodec2("opus", "pcma");
+    //testCodec2("opus", "pcma");
+    encodeOne("opus");
+    testStream1();
 }
 
 //if using asm.js, already loaded, force onload

@@ -23,6 +23,8 @@ public:
             m_enc = CreateEncoder(codec, frameSize, sampleRate, channels, bitrate, isVoip);
             m_frame_size = frameSize;
             m_delta_ts = sampleRate/1000*frameSize*channels;
+        } else {
+            LOGE("[local] invalid codec="<<codec);
         }
     }
     void set_codec_bitrate(int bitrate) {
@@ -52,7 +54,11 @@ public:
                 cricket::SetRtpSsrc(data, length, m_ssrc);
                 memcpy(data+12, frame.c_str(), frame.size());
                 return true;
+            } else {
+                LOGE("[local] output nothing");
             }
+        } else {
+            LOGE("[local] output invalid state");
         }
         return false;
     }
@@ -60,6 +66,9 @@ public:
 private:
     uint32_t gen_timestamp() {
         int64_t now = NowMs();
+        if (m_timestamp == 0) {
+            m_timestamp = RandTimestamp();
+        }
         if (m_last_time > 0) {
             int timeout = m_frame_size*250;
             if (now >= m_last_time + timeout) {
@@ -164,37 +173,37 @@ EMSCRIPTEN_KEEPALIVE
 void LocalStream_setCodecParameters(audio::LocalStream *self,
         int codec, float frameSize, int sampleRate, int channels, int bitrate, bool isVoip)
 {
-    if (self) self->set_codec_parameters(codec, frameSize, sampleRate, channels, bitrate, isVoip);
+    self->set_codec_parameters(codec, frameSize, sampleRate, channels, bitrate, isVoip);
 }
 
 EMSCRIPTEN_KEEPALIVE
 void LocalStream_setCodecBitrate(audio::LocalStream *self, int bitrate)
 {
-    if (self) self->set_codec_bitrate(bitrate);
+    self->set_codec_bitrate(bitrate);
 }
 
 EMSCRIPTEN_KEEPALIVE
 void LocalStream_setRtpParameters(audio::LocalStream *self, int ssrc, int payloadType)
 {
-    if (self) self->set_rtp_parameters((uint32_t)ssrc, payloadType);
+    self->set_rtp_parameters((uint32_t)ssrc, payloadType);
 }
 
 EMSCRIPTEN_KEEPALIVE
 void LocalStream_setInputParameters(audio::LocalStream *self, int sampleRate, int channels)
 {
-    if (self) self->set_input_parameters(sampleRate, channels);
+    self->set_input_parameters(sampleRate, channels);
 }
 
 EMSCRIPTEN_KEEPALIVE
 void LocalStream_input(audio::LocalStream *self, const int16_t *data, int size)
 {
-    if (self) self->input(data, size);
+    self->input(data, size);
 }
 
 EMSCRIPTEN_KEEPALIVE
-void LocalStream_output(audio::LocalStream *self, String *out)
+bool LocalStream_output(audio::LocalStream *self, String *out)
 {
-    if (self) self->output(out);
+    return self->output(out);
 }
 
 // RemoteStream
@@ -215,25 +224,25 @@ EMSCRIPTEN_KEEPALIVE
 void RemoteStream_registerPayloadType(audio::RemoteStream *self,
         int payloadType, int codec, int sampleRate, int channels)
 {
-    if (self) self->register_payload_type(payloadType, codec, sampleRate, channels);
+    self->register_payload_type(payloadType, codec, sampleRate, channels);
 }
 
 EMSCRIPTEN_KEEPALIVE
 void RemoteStream_setOutputParameters(audio::RemoteStream *self, int sampleRate, int channels)
 {
-    if (self) self->set_output_parameters(sampleRate, channels);
+    self->set_output_parameters(sampleRate, channels);
 }
 
 EMSCRIPTEN_KEEPALIVE
 void RemoteStream_input(audio::RemoteStream *self, const char *data, size_t size)
 {
-    if (self) self->input(data, size);
+    self->input(data, size);
 }
 
 EMSCRIPTEN_KEEPALIVE
-void RemoteStream_output(audio::RemoteStream *self, Int16Array *out)
+bool RemoteStream_output(audio::RemoteStream *self, Int16Array *out)
 {
-    if (self) self->output(out);
+    return self->output(out);
 }
 
 } // extern "C"

@@ -29,6 +29,7 @@ bool isCodecValid(int codec);
 String getCodecName(int codec);
 
 int64_t NowMs();
-
+int RandNumber();
+uint32_t RandTimestamp();
 
 #endif // _BASE_COMMON_H_

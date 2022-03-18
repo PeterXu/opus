@@ -1,5 +1,6 @@
 #include "base/common.h"
 #include <sys/time.h>
+#include <time.h>
 
 static String kCodecNames[] = {
     "unknown",
@@ -30,3 +31,17 @@ int64_t NowMs() {
     return GetTimeMs(&tv);
 }
 
+int RandNumber() {
+    srand (time(NULL));
+    return rand();
+}
+
+uint32_t RandTimestamp() {
+    srand (time(NULL));
+    uint32_t ts = 0;
+    ts = rand();
+    ts = ts << 16;
+    ts += rand();
+    ts &= 0x3fffffff;
+    return ts;
+}

@@ -359,32 +359,31 @@ void Encoder_delete(audio::Encoder *self)
 EMSCRIPTEN_KEEPALIVE
 void Encoder_setComplexity(audio::Encoder *self, int complexity)
 {
-    if (self) self->set_complexity(complexity);
+    self->set_complexity(complexity);
 }
 
 EMSCRIPTEN_KEEPALIVE
 void Encoder_setBitrate(audio::Encoder *self, int bitrate)
 {
-    if (self) self->set_bitrate(bitrate);
+    self->set_bitrate(bitrate);
 }
 
 EMSCRIPTEN_KEEPALIVE
 void Encoder_setInputParameters(audio::Encoder *self, int sampleRate, int channels)
 {
-    if (self) self->set_input_parameters(sampleRate, channels);
+    self->set_input_parameters(sampleRate, channels);
 }
 
 EMSCRIPTEN_KEEPALIVE
 void Encoder_input(audio::Encoder *self, const int16_t *data, int size)
 {
-    if (self) self->input(data, size);
+    self->input(data, size);
 }
 
 EMSCRIPTEN_KEEPALIVE
 bool Encoder_output(audio::Encoder *self, String *out)
 {
-    if (self) return self->output(out);
-    else return false;
+    return self->output(out);
 }
 
 // Decoder
@@ -405,7 +404,7 @@ void Decoder_delete(audio::Decoder *self)
 EMSCRIPTEN_KEEPALIVE
 void Decoder_setOutputParameters(audio::Decoder *self, int sampleRate, int channels)
 {
-    if (self) self->set_output_parameters(sampleRate, channels);
+    self->set_output_parameters(sampleRate, channels);
 }
 
 EMSCRIPTEN_KEEPALIVE
