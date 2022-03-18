@@ -29,7 +29,6 @@ Module.CreatePcmuDecoder = function() {
 }
 
 
-
 /// Encoder
 
 // create encoder
@@ -69,13 +68,14 @@ Encoder.prototype.setInputParameters = function(samplerate, channels)
     Module._Encoder_setInputParameters(this.enc, samplerate, channels);
 }
 
-// add samples to the encoder buffer
+// add samples to the encoder buffer. (samples.BYTES_PER_ELEMENT is 2)
 // @param samples: Int16Array of interleaved (if multiple channels) samples
 Encoder.prototype.input = function(samples)
 {
-    var ptr = Module._malloc(samples.length*samples.BYTES_PER_ELEMENT);
-    var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, samples.length*samples.BYTES_PER_ELEMENT);
-    pdata.set(new Uint8Array(samples.buffer, samples.byteOffset, samples.length*samples.BYTES_PER_ELEMENT));
+    var nbytes = samples.length*samples.BYTES_PER_ELEMENT;
+    var ptr = Module._malloc(nbytes);
+    var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, nbytes);
+    pdata.set(new Uint8Array(samples.buffer, samples.byteOffset, nbytes));
 
     Module._Encoder_input(this.enc, ptr, samples.length);
     Module._free(ptr);
@@ -118,13 +118,14 @@ Decoder.prototype.setOutputParameters = function(samplerate, channels)
     Module._Decoder_setOutputParameters(this.dec, samplerate, channels);
 }
 
-// add packet to the decoder buffer
+// add packet to the decoder buffer. (packet.BYTES_PER_ELEMENT is 1)
 // @param packet: Uint8Array
 Decoder.prototype.input = function(packet)
 {
-    var ptr = Module._malloc(packet.length*packet.BYTES_PER_ELEMENT);
-    var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, packet.length*packet.BYTES_PER_ELEMENT);
-    pdata.set(new Uint8Array(packet.buffer, packet.byteOffset, packet.length*packet.BYTES_PER_ELEMENT));
+    var nbytes = packet.length*packet.BYTES_PER_ELEMENT;
+    var ptr = Module._malloc(nbytes);
+    var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, nbytes);
+    pdata.set(new Uint8Array(packet.buffer, packet.byteOffset, nbytes));
 
     Module._Decoder_input(this.dec, ptr, packet.length);
     Module._free(ptr);

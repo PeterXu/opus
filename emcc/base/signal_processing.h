@@ -1,5 +1,5 @@
-#ifndef _API_INLINE_H_
-#define _API_INLINE_H_
+#ifndef _SIGNAL_PROCESSING_H_
+#define _SIGNAL_PROCESSING_H_
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -53,4 +53,4 @@ private:
 };
 
 
-#endif // _API_INLINE_H_
+#endif // _SIGNAL_PROCESSING_H_

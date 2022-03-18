@@ -17,6 +17,7 @@ var samples = new Int16Array(dataSize);
 for(var k = 0; k < dataSize; k++) {
     samples[k] = Math.random()*30000;
 }
+console.log("samples size: ", samples.length, samples.BYTES_PER_ELEMENT, samples.byteOffset);
 
 function encodeOne(codec) {
     var enc = null;
@@ -33,7 +34,7 @@ function encodeOne(codec) {
         console.log("no encoding output");
         return null;
     }
-    console.log("encode packet size: ", packet.length);
+    console.log("encode packet size: ", packet.length, packet.BYTES_PER_ELEMENT);
     return packet;
 }
 

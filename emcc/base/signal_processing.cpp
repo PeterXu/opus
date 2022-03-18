@@ -1,4 +1,4 @@
-#include "inline.h"
+#include "base/signal_processing.h"
 #include "spl/resampler.h"
 
 void MonoToStereo(const int16_t* src_audio, size_t samples_per_channel, int16_t* dst_audio) {

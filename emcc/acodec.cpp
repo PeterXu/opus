@@ -1,54 +1,34 @@
-#include <iostream>
-#include <vector>
-#include <deque>
-#include <stdint.h>
-
+#include "acodec.h"
 #include <emscripten.h>
+
 #include "opus.h"
 #include "g711/g711_interface.h"
-#include "inline.h"
+#include "base/signal_processing.h"
 
-typedef std::string String;
-typedef std::vector<int16_t> Int16Array;
-typedef std::vector<uint8_t> Uint8Array;
+namespace audio {
 
-#define LOGI(...) std::cout<<__VA_ARGS__<<std::endl
-#define LOGE(...) std::cerr<<__VA_ARGS__<<std::endl
-
-#define MAX_SAMPLES_NUMBER (50*5)
-#define MAX_PACKET_NUMBER  (50*5)
-
-enum Codecs {
-    OPUS = 1,
-    PCMA = 2,
-    PCMU = 3,
-};
-
-static String kCodecs[] = {
-    "opus",
-    "pcma",
-    "pcmu",
-};
-
-static String codecName(int idx) {
-    if (idx > 0 && idx <= 3) {
-        return kCodecs[idx-1];
-    } else {
-        return "unknown";
-    }
-}
-
-
+///
 /// audio encoder
+///
 
-class Encoder {
+class EmptyEncoder : public Encoder {
 public:
-    Encoder(int codec, int sampleRate, int channels, int bitrate, float frameSize)
+    virtual ~EmptyEncoder() {}
+    virtual void set_complexity(int complexity) {}
+    virtual void set_bitrate(int bitrate) {}
+    virtual void set_input_parameters(int sampleRate, int channels) {}
+    virtual void input(const int16_t* data, int size) {}
+    virtual bool output(String *out) {return false;}
+};
+
+class BaseEncoder : public Encoder {
+public:
+    BaseEncoder(int codec, int sampleRate, int channels, int bitrate, float frameSize)
         : m_codec(codec),
         m_sampleRate(sampleRate), m_channels(channels), m_bitrate(bitrate), m_frameSize(frameSize),
         m_resampler(NULL)
     {}
-    virtual ~Encoder() {
+    virtual ~BaseEncoder() {
         delete m_resampler;
         m_resampler = NULL;
         m_samples_list.clear();
@@ -87,7 +67,7 @@ public:
         }
     }
     virtual bool output(String *out) {
-        if (m_samples_list.empty()) {
+        if (!out || m_samples_list.empty()) {
             return false;
         }
 
@@ -131,9 +111,9 @@ private:
     MyResampler *m_resampler;
 };
 
-class CG711Encoder : public Encoder {
+class CG711Encoder : public BaseEncoder {
 public:
-    CG711Encoder(int codec, float frameSize) : Encoder(codec, 8000, 1, 0, frameSize)
+    CG711Encoder(int codec, float frameSize) : BaseEncoder(codec, 8000, 1, 0, frameSize)
     {}
     virtual ~CG711Encoder() {}
     virtual size_t encodePacket(Int16Array &samples, int sampleSize, uint8_t *buffer, size_t bufferSize) {
@@ -148,10 +128,10 @@ public:
     }
 };
 
-class COpusEncoder : public Encoder {
+class COpusEncoder : public BaseEncoder {
 public:
     COpusEncoder(float frameSize, int sampleRate, int channels, int bitrate, bool isVoip)
-        : Encoder(OPUS, sampleRate, channels, bitrate, frameSize), m_enc(NULL) {
+        : BaseEncoder(OPUS, sampleRate, channels, bitrate, frameSize), m_enc(NULL) {
         int err = 0;
         int application = (isVoip ? OPUS_APPLICATION_VOIP : OPUS_APPLICATION_AUDIO);
         m_enc = opus_encoder_create(sampleRate, channels, application, &err);
@@ -205,24 +185,37 @@ private:
     OpusEncoder *m_enc;
 };
 
-/// audio decoder
+Encoder* CreateEncoder(int codec, float frameSize, int sampleRate, int channels, int bitrate, bool isVoip) {
+    if (codec == OPUS) {
+        return new COpusEncoder(frameSize, sampleRate, channels, bitrate, isVoip);
+    } else if (codec == PCMA || codec == PCMU) {
+        return new CG711Encoder(codec, frameSize);
+    } else {
+        return new EmptyEncoder();
+    }
+}
 
-class Decoder {
+///
+/// audio decoder
+///
+
+class EmptyDecoder : public Decoder {
 public:
-    Decoder(int codec, int sampleRate, int channels)
+    virtual ~EmptyDecoder() {}
+    virtual void set_output_parameters(int sampleRate, int channels) {}
+    virtual void input(const char *data, size_t size) {}
+    virtual bool output(Int16Array *out) {return false;}
+};
+
+class BaseDecoder : public Decoder {
+public:
+    BaseDecoder(int codec, int sampleRate, int channels)
         : m_codec(codec), m_sampleRate(sampleRate), m_channels(channels), m_resampler(NULL)
     {}
-    virtual ~Decoder() {
+    virtual ~BaseDecoder() {
         delete m_resampler;
         m_resampler = NULL;
         m_packet_list.clear();
-    }
-    virtual void input(const char *data, size_t size) {
-        if (m_packet_list.size() >= MAX_PACKET_NUMBER) {
-            m_packet_list.pop_front();
-        }
-        Uint8Array packet(data, data+size);
-        m_packet_list.push_back(packet);
     }
     virtual void set_output_parameters(int sampleRate, int channels) {
         LOGI("[dec] output parameters="<<sampleRate<<"/"<<channels);
@@ -232,8 +225,15 @@ public:
             m_resampler->Reset(m_sampleRate, m_channels, sampleRate, channels);
         }
     }
+    virtual void input(const char *data, size_t size) {
+        if (m_packet_list.size() >= MAX_PACKET_NUMBER) {
+            m_packet_list.pop_front();
+        }
+        Uint8Array packet(data, data+size);
+        m_packet_list.push_back(packet);
+    }
     virtual bool output(Int16Array *out) {
-        if (m_packet_list.empty()) {
+        if (!out || m_packet_list.empty()) {
             return false;
         }
 
@@ -281,9 +281,9 @@ private:
     MyResampler *m_resampler;
 };
 
-class CG711Decoder : public Decoder {
+class CG711Decoder : public BaseDecoder {
 public:
-    CG711Decoder(int codec) : Decoder(codec, 8000, 1) {}
+    CG711Decoder(int codec) : BaseDecoder(codec, 8000, 1) {}
     virtual ~CG711Decoder() {}
     virtual size_t decodePacket(Uint8Array &packet, int16_t *buffer, size_t bufferSize) {
         int16_t iret = 0;
@@ -297,10 +297,10 @@ public:
     }
 };
 
-class COpusDecoder : public Decoder {
+class COpusDecoder : public BaseDecoder {
 public:
     COpusDecoder(int sampleRate, int channels)
-        : Decoder(OPUS, sampleRate, channels), m_dec(NULL) {
+        : BaseDecoder(OPUS, sampleRate, channels), m_dec(NULL) {
         int err = 0;
         m_dec = opus_decoder_create(sampleRate, channels, &err);
         if (m_dec == NULL) {
@@ -325,56 +325,63 @@ private:
     OpusDecoder *m_dec;
 };
 
+Decoder* CreateDecoder(int codec, int sampleRate, int channels) {
+    if (codec == OPUS) {
+        return new COpusDecoder(sampleRate, channels);
+    } else if (codec == PCMA || codec == PCMU) {
+        return new CG711Decoder(codec);
+    } else {
+        return new EmptyDecoder();
+    }
+}
 
-extern "C"{
+} // namespace audio
+
+
+
+extern "C" {
 
 // Encoder
 
 EMSCRIPTEN_KEEPALIVE
-Encoder* Encoder_new(int codec, float frameSize, int sampleRate, int channels, int bitrate, bool isVoip)
+audio::Encoder* Encoder_new(int codec, float frameSize, int sampleRate, int channels, int bitrate, bool isVoip)
 {
-    LOGI("Encoder_new, "<<codecName(codec)<<","<<frameSize<<"ms,"<<sampleRate<<"/"<<channels<<","<<bitrate<<"bps,"<<isVoip);
-    Encoder *self = NULL;
-    if (codec == OPUS) {
-        self = new COpusEncoder(frameSize, sampleRate, channels, bitrate, isVoip);
-    } else if (codec == PCMU || codec == PCMA) {
-        self = new CG711Encoder(codec, frameSize);
-    }
-    return self;
+    LOGI("Encoder_new, "<<getCodecName(codec)<<","<<frameSize<<"ms,"<<sampleRate<<"/"<<channels<<","<<bitrate<<"bps,"<<isVoip);
+    return audio::CreateEncoder(codec, frameSize, sampleRate, channels, bitrate, isVoip);
 }
 
 EMSCRIPTEN_KEEPALIVE
-void Encoder_delete(Encoder *self)
+void Encoder_delete(audio::Encoder *self)
 {
     delete self;
 }
 
 EMSCRIPTEN_KEEPALIVE
-void Encoder_setComplexity(Encoder *self, int complexity)
+void Encoder_setComplexity(audio::Encoder *self, int complexity)
 {
     if (self) self->set_complexity(complexity);
 }
 
 EMSCRIPTEN_KEEPALIVE
-void Encoder_setBitrate(Encoder *self, int bitrate)
+void Encoder_setBitrate(audio::Encoder *self, int bitrate)
 {
     if (self) self->set_bitrate(bitrate);
 }
 
 EMSCRIPTEN_KEEPALIVE
-void Encoder_setInputParameters(Encoder *self, int sampleRate, int channels)
+void Encoder_setInputParameters(audio::Encoder *self, int sampleRate, int channels)
 {
     if (self) self->set_input_parameters(sampleRate, channels);
 }
 
 EMSCRIPTEN_KEEPALIVE
-void Encoder_input(Encoder *self, const int16_t *data, int size)
+void Encoder_input(audio::Encoder *self, const int16_t *data, int size)
 {
     if (self) self->input(data, size);
 }
 
 EMSCRIPTEN_KEEPALIVE
-bool Encoder_output(Encoder *self, String *out)
+bool Encoder_output(audio::Encoder *self, String *out)
 {
     if (self) return self->output(out);
     else return false;
@@ -383,93 +390,34 @@ bool Encoder_output(Encoder *self, String *out)
 // Decoder
 
 EMSCRIPTEN_KEEPALIVE
-Decoder* Decoder_new(int codec, int sampleRate, int channels)
+audio::Decoder* Decoder_new(int codec, int sampleRate, int channels)
 {
-    LOGI("Decoder_new, "<<codecName(codec)<<","<<sampleRate<<"/"<<channels);
-    Decoder *self = NULL;
-    if (codec == OPUS) {
-        self = new COpusDecoder(sampleRate, channels);
-    } else if (codec == PCMU || codec == PCMA) {
-        self = new CG711Decoder(codec);
-    } 
-    return self;
+    LOGI("Decoder_new, "<<getCodecName(codec)<<","<<sampleRate<<"/"<<channels);
+    return audio::CreateDecoder(codec, sampleRate, channels);
 }
 
 EMSCRIPTEN_KEEPALIVE
-void Decoder_delete(Decoder *self)
+void Decoder_delete(audio::Decoder *self)
 {
     delete self;
 }
 
 EMSCRIPTEN_KEEPALIVE
-void Decoder_setOutputParameters(Decoder *self, int sampleRate, int channels)
+void Decoder_setOutputParameters(audio::Decoder *self, int sampleRate, int channels)
 {
     if (self) self->set_output_parameters(sampleRate, channels);
 }
 
 EMSCRIPTEN_KEEPALIVE
-void Decoder_input(Decoder *self, const char* data, size_t size)
+void Decoder_input(audio::Decoder *self, const char* data, size_t size)
 {
     self->input(data,size);
 }
 
 EMSCRIPTEN_KEEPALIVE
-bool Decoder_output(Decoder *self, Int16Array *out)
+bool Decoder_output(audio::Decoder *self, Int16Array *out)
 {
     return self->output(out);
 }
 
-// String
-
-EMSCRIPTEN_KEEPALIVE
-size_t String_size(String *self)
-{
-    return self->size();
-}
-
-EMSCRIPTEN_KEEPALIVE
-String* String_new()
-{
-    return new std::string();
-}
-
-EMSCRIPTEN_KEEPALIVE
-const char* String_data(String *self)
-{
-    return self->c_str();
-}
-
-EMSCRIPTEN_KEEPALIVE
-void String_delete(String *self)
-{
-    delete self;
-}
-
-// Int16Array
-
-EMSCRIPTEN_KEEPALIVE
-size_t Int16Array_size(Int16Array *self)
-{
-    return self->size();
-}
-
-EMSCRIPTEN_KEEPALIVE
-Int16Array* Int16Array_new()
-{
-    return new std::vector<int16_t>();
-}
-
-EMSCRIPTEN_KEEPALIVE
-const int16_t* Int16Array_data(Int16Array *self)
-{
-    return &(*self)[0];
-}
-
-EMSCRIPTEN_KEEPALIVE
-void Int16Array_delete(Int16Array *self)
-{
-    delete self;
-}
-
-}
-
+} // extern "C"
