@@ -98,8 +98,8 @@ Encoder.prototype.output = function()
 
 // create decoder
 // @param codec: opus/pcma/pcmu
-// @param samplerate: should match the encoder options, [g711 unsupport]
-// @param channels: should match the encoder options, [g711 unsupport]
+// @param samplerate: input packet's sample rate, [g711 unsupport]
+// @param channels: input packet's channels, [g711 unsupport]
 function Decoder(codec, samplerate, channels)
 {
     this.dec = Module._Decoder_new.apply(null, arguments);
@@ -241,8 +241,8 @@ RemoteStream.prototype.destroy = function()
 // register remote-stream mapping of payload-type => codec.
 // @param payloadtype: 0~127
 // @param codec: opus/pcma/pcmu
-// @param samplerate: should match the encoder options, [g711 unsupport]
-// @param channels: should match the encoder options, [g711 unsupport]
+// @param samplerate: input packet's sample rate, [g711 unsupport]
+// @param channels: input packets' channels, [g711 unsupport]
 RemoteStream.prototype.registerPayloadType = function(payloadtype, codec, samplerate, channels)
 {
     Module._RemoteStream_registerPayloadType(this.stream, payloadtype, codec, samplerate, channels);
@@ -285,8 +285,5 @@ Module.LocalStream = LocalStream;
 Module.RemoteStream = RemoteStream;
 
 
-
-//make the module global if not using nodejs
-if (Module["ENVIRONMENT"] != "NODE") {
-    libac = Module;
-}
+var libac = Module;
+export default libac;

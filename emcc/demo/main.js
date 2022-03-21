@@ -142,6 +142,13 @@ function testStream1() {
     var data = stream.output();
     if (data) {
         console.log("local-stream output rtp:", data.length);
+
+        var recv = new libac.RemoteStream();
+        recv.registerPayloadType(103, libac.Consts.OPUS, sampleRate, channels);
+        recv.setOutputParameters(sampleRate, channels);
+        recv.input(data);
+        var decoded = recv.output();
+        console.log(decoded);
     } else {
         console.log("local-stream no output");
     }
