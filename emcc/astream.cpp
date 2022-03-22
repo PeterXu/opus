@@ -41,8 +41,21 @@ public:
         LOGI("[local] set input parameters: "<<sampleRate<<"/"<<channels);
         if (m_enc) m_enc->set_input_parameters(sampleRate, channels);
     }
-    void input(const int16_t *data, int size) {
-        if (m_enc) m_enc->input(data, size);
+    int input(const int16_t *data, int size) {
+        if (m_enc) return m_enc->input(data, size);
+        return -1;
+    }
+    int input2(const float *data, int size, int sampleRate, int channels) {
+        set_input_parameters(sampleRate, channels);
+
+        // convert from float to int16_t
+        Int16Array array;
+        array.resize(size);
+        for (int i=0; i < size; i++) {
+            float s = std::max(-1.0f, std::min(1.0f, data[i]));
+            array[i] =  s < 0 ? (s * 0x8000) : (s * 0x7FFF);
+        }
+        return input(&array[0], size);
     }
     bool output(String *out) {
         if (m_enc && out) {
@@ -126,20 +139,21 @@ public:
             it->second->set_output_parameters(sampleRate, channels);
         }
     }
-    void input(const char *data, size_t size) {
+    int input(const char *data, size_t size) {
+        int iret = -1;
         if (cricket::IsRtpPacket(data, size)) {
             size_t headLen = 0;
-            if (!cricket::GetRtpHeaderLen(data, size, &headLen)) {
-                return;
-            }
-            int ptype = 0;
-            cricket::GetRtpPayloadType(data, size, &ptype);
-            Decoder* dec = m_decs[ptype];
-            if (dec) {
-                dec->input(data + headLen, size - headLen);
-                m_last_dec = dec;
+            if (cricket::GetRtpHeaderLen(data, size, &headLen)) {
+                int ptype = 0;
+                cricket::GetRtpPayloadType(data, size, &ptype);
+                Decoder* dec = m_decs[ptype];
+                if (dec) {
+                    iret = dec->input(data + headLen, size - headLen);
+                    m_last_dec = dec;
+                }
             }
         }
+        return iret;
     }
     bool output(Int16Array *out) {
         if (m_last_dec && out) {
@@ -200,9 +214,15 @@ void LocalStream_setInputParameters(audio::LocalStream *self, int sampleRate, in
 }
 
 EMSCRIPTEN_KEEPALIVE
-void LocalStream_input(audio::LocalStream *self, const int16_t *data, int size)
+int LocalStream_input(audio::LocalStream *self, const int16_t *data, int size)
 {
-    self->input(data, size);
+    return self->input(data, size);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int LocalStream_input2(audio::LocalStream *self, const float *data, int size, int sampleRate, int channels)
+{
+    return self->input2(data, size, sampleRate, channels);
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -239,9 +259,9 @@ void RemoteStream_setOutputParameters(audio::RemoteStream *self, int sampleRate,
 }
 
 EMSCRIPTEN_KEEPALIVE
-void RemoteStream_input(audio::RemoteStream *self, const char *data, size_t size)
+int RemoteStream_input(audio::RemoteStream *self, const char *data, size_t size)
 {
-    self->input(data, size);
+    return self->input(data, size);
 }
 
 EMSCRIPTEN_KEEPALIVE

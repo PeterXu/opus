@@ -1,7 +1,12 @@
-if(typeof require != "undefined" && typeof libac == "undefined"){
-    LIBAC_WASM_URL = "../libac.wasm";
-    libac = require("../libac.js");
-}
+var libac = null;
+import("../libac.js").then((evt) => {
+    libac = evt.default;
+    console.log(evt, libac);
+    libac.onload = function(){
+        do_testing();
+    };
+});
+
 
 // 
 // input samples parameters
@@ -154,7 +159,7 @@ function testStream1() {
     }
 }
 
-libac.onload = function(){
+function do_testing() {
     //testCodec1("opus");
     //testCodec1("pcma");
     //testCodec2("opus", "opus");
@@ -163,7 +168,3 @@ libac.onload = function(){
     testStream1();
 }
 
-//if using asm.js, already loaded, force onload
-if (libac.loaded) {
-    libac.onload();
-}

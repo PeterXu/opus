@@ -77,8 +77,9 @@ Encoder.prototype.input = function(samples)
     var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, nbytes);
     pdata.set(new Uint8Array(samples.buffer, samples.byteOffset, nbytes));
 
-    Module._Encoder_input(this.enc, ptr, samples.length);
+    var iret = Module._Encoder_input(this.enc, ptr, samples.length);
     Module._free(ptr);
+    return iret;
 }
 
 // output the next encoded packet
@@ -127,8 +128,9 @@ Decoder.prototype.input = function(packet)
     var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, nbytes);
     pdata.set(new Uint8Array(packet.buffer, packet.byteOffset, nbytes));
 
-    Module._Decoder_input(this.dec, ptr, packet.length);
+    var iret = Module._Decoder_input(this.dec, ptr, packet.length);
     Module._free(ptr);
+    return iret;
 }
 
 // output the next decoded samples
@@ -205,8 +207,22 @@ LocalStream.prototype.input = function(samples)
     var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, nbytes);
     pdata.set(new Uint8Array(samples.buffer, samples.byteOffset, nbytes));
 
-    Module._LocalStream_input(this.stream, ptr, samples.length);
+    var iret = Module._LocalStream_input(this.stream, ptr, samples.length);
     Module._free(ptr);
+    return iret;
+}
+
+// add samples to the local-stream encoder buffer. (samples.BYTES_PER_ELEMENT is 4)
+// @param samples: Float32Array of not-interleaved (if multiple channels) samples
+LocalStream.prototype.input2 = function(samples, sampleRate, channels) {
+    var nbytes = samples.length*samples.BYTES_PER_ELEMENT;
+    var ptr = Module._malloc(nbytes);
+    var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, nbytes);
+    pdata.set(new Uint8Array(samples.buffer, samples.byteOffset, nbytes));
+
+    var iret = Module._LocalStream_input2(this.stream, ptr, samples.length, sampleRate, channels);
+    Module._free(ptr);
+    return iret;
 }
 
 // output the next encoded packet
@@ -263,8 +279,9 @@ RemoteStream.prototype.input = function(packet)
     var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, nbytes);
     pdata.set(new Uint8Array(packet.buffer, packet.byteOffset, nbytes));
 
-    Module._RemoteStream_input(this.stream, ptr, packet.length);
+    var iret = Module._RemoteStream_input(this.stream, ptr, packet.length);
     Module._free(ptr);
+    return iret;
 }
 
 // output the next decoded samples
@@ -286,4 +303,7 @@ Module.RemoteStream = RemoteStream;
 
 
 var libac = Module;
+if (libac.loaded) {
+    libac.onload();
+}
 export default libac;

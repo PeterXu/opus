@@ -17,22 +17,32 @@ public:
     virtual void set_complexity(int complexity) {}
     virtual void set_bitrate(int bitrate) {}
     virtual void set_input_parameters(int sampleRate, int channels) {}
-    virtual void input(const int16_t* data, int size) {}
+    virtual int input(const int16_t* data, int size) {return -1;}
     virtual bool output(String *out) {return false;}
 };
 
 class BaseEncoder : public Encoder {
 public:
+    static const int kMaxDataSizeSamples = 3840;
+    static constexpr int kNativeSampleRatesHz[] = {
+        8000, 16000, 32000, 48000
+    };
+    static const size_t kNumNativeSampleRates =
+        sizeof(kNativeSampleRatesHz)/sizeof(kNativeSampleRatesHz[0]);
+
+public:
     BaseEncoder(int codec, int sampleRate, int channels, int bitrate, float frameSize)
         : m_codec(codec),
         m_sampleRate(sampleRate), m_channels(channels), m_bitrate(bitrate), m_frameSize(frameSize),
-        m_resampler(NULL)
+        m_input_mode(0), m_resampler(NULL)
     {}
     virtual ~BaseEncoder() {
         delete m_resampler;
         m_resampler = NULL;
         m_samples_list.clear();
     }
+
+    // base interfaces
     virtual void set_complexity(int complexity) {}
     virtual void set_bitrate(int bitrate) {}
     virtual void set_input_parameters(int sampleRate, int channels) {
@@ -43,38 +53,92 @@ public:
             m_resampler->Reset(sampleRate, channels, m_sampleRate, m_channels);
         }
     }
-    virtual void input(const int16_t* data, int size) {
-        if (m_samples_list.size() >= MAX_SAMPLES_NUMBER) {
-            m_samples_list.pop_front();
+    virtual void set_input_mode(int mode) {
+        // mode: 0 - frame by frame, else continuous samples.
+        if (mode != m_input_mode) {
+            m_input_mode = mode;
+            m_samples_list.clear(); // mode-0
+            m_samples.clear();      // non mode-0
         }
-
+    }
+    int check_samples(int length) {
+        int iret = 0;
+        if (m_input_mode == 0) {
+            while (m_samples_list.size() >= MAX_SAMPLES_NUMBER) {
+                m_samples_list.pop_front();
+            }
+            while(!m_samples_list.empty()) {
+                auto it = m_samples_list.front();
+                if (it.size() < length) {
+                    m_samples_list.pop_front();
+                } else {
+                    iret = 1;
+                    break;
+                }
+            }
+        } else {
+            if (m_samples.size() >= MAX_SAMPLES_NUMBER * 960) {
+                // TODO
+            }
+            if (m_samples.size() >= length) {
+                iret = 1;
+            }
+        }
+        return iret;
+    }
+    void push_samples(const int16_t* data, int size) {
+        if (m_input_mode == 0) {
+            Int16Array samples(data, data + size);
+            m_samples_list.push_back(samples);
+        } else {
+            m_samples.insert(m_samples.end(), data, data+size);
+        }
+    }
+    bool pop_samples(Int16Array &samples, size_t length) {
+        if (m_input_mode == 0) {
+            if (!m_samples_list.empty()) {
+                auto it = m_samples_list.front();
+                if (it.size() >= length) {
+                    samples.assign(it.begin(), it.end());
+                }
+                m_samples_list.pop_front();
+            }
+        } else {
+            if (m_samples.size() >= length) {
+                auto it = m_samples.begin();
+                samples.assign(it, it + length);
+                m_samples.erase(it, it + length);
+            }
+        }
+        return !samples.empty();
+    }
+    virtual int input(const int16_t* data, int size) {
         if (m_resampler) {
             int iret = m_resampler->Push(data, (size_t)size);
             LOGI("[enc] input resample size="<<size<<" to "<<iret);
             if (iret > 0) {
                 const int16_t* newData = m_resampler->Data();
-                Int16Array samples(newData, newData + iret);
-                m_samples_list.push_back(samples);
+                push_samples(newData, iret);
             } else if (iret == 0) {
-                Int16Array samples(data, data + size);
-                m_samples_list.push_back(samples);
+                push_samples(data, size);
             } else {
                 LOGE("encode-input resampler failed");
+                return -1;
             }
         } else {
-            Int16Array samples(data, data + size);
-            m_samples_list.push_back(samples);
+            push_samples(data, size);
         }
+        size_t sampleSize = getRawSampleSize();
+        return check_samples(sampleSize);
     }
     virtual bool output(String *out) {
-        if (!out || m_samples_list.empty()) {
+        if (!out) {
             return false;
         }
 
+        Int16Array samples;
         size_t sampleSize = getRawSampleSize();
-        std::deque<Int16Array>::reference samples = m_samples_list.front();
-        if (samples.size() < sampleSize) {
-            m_samples_list.pop_front();
+        if (!pop_samples(samples, sampleSize)) {
             return false;
         }
 
@@ -86,7 +150,6 @@ public:
         }
 
         delete [] buffer;
-        m_samples_list.pop_front();
         return (iret > 0);
     }
 
@@ -107,8 +170,10 @@ protected:
     float m_frameSize; //ms
 
 private:
-    std::deque<Int16Array> m_samples_list;
+    int m_input_mode;
     MyResampler *m_resampler;
+    Int16Array m_samples;
+    std::deque<Int16Array> m_samples_list;
 };
 
 class CG711Encoder : public BaseEncoder {
@@ -203,7 +268,7 @@ class EmptyDecoder : public Decoder {
 public:
     virtual ~EmptyDecoder() {}
     virtual void set_output_parameters(int sampleRate, int channels) {}
-    virtual void input(const char *data, size_t size) {}
+    virtual int input(const char *data, size_t size) {return -1;}
     virtual bool output(Int16Array *out) {return false;}
 };
 
@@ -225,12 +290,13 @@ public:
             m_resampler->Reset(m_sampleRate, m_channels, sampleRate, channels);
         }
     }
-    virtual void input(const char *data, size_t size) {
+    virtual int input(const char *data, size_t size) {
         if (m_packet_list.size() >= MAX_PACKET_NUMBER) {
             m_packet_list.pop_front();
         }
         Uint8Array packet(data, data+size);
         m_packet_list.push_back(packet);
+        return 1;
     }
     virtual bool output(Int16Array *out) {
         if (!out || m_packet_list.empty()) {
@@ -375,9 +441,9 @@ void Encoder_setInputParameters(audio::Encoder *self, int sampleRate, int channe
 }
 
 EMSCRIPTEN_KEEPALIVE
-void Encoder_input(audio::Encoder *self, const int16_t *data, int size)
+int Encoder_input(audio::Encoder *self, const int16_t *data, int size)
 {
-    self->input(data, size);
+    return self->input(data, size);
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -408,9 +474,9 @@ void Decoder_setOutputParameters(audio::Decoder *self, int sampleRate, int chann
 }
 
 EMSCRIPTEN_KEEPALIVE
-void Decoder_input(audio::Decoder *self, const char* data, size_t size)
+int Decoder_input(audio::Decoder *self, const char* data, size_t size)
 {
-    self->input(data,size);
+    return self->input(data,size);
 }
 
 EMSCRIPTEN_KEEPALIVE
