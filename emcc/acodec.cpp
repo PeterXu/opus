@@ -16,8 +16,7 @@ public:
     virtual ~EmptyEncoder() {}
     virtual void set_complexity(int complexity) {}
     virtual void set_bitrate(int bitrate) {}
-    virtual void set_input_parameters(int sampleRate, int channels) {}
-    virtual int input(const int16_t* data, int size) {return -1;}
+    virtual int input(const int16_t* data, int size, int sampleRate, int channels) {return -1;}
     virtual bool output(String *out) {return false;}
 };
 
@@ -33,132 +32,109 @@ public:
 public:
     BaseEncoder(int codec, int sampleRate, int channels, int bitrate, float frameSize)
         : m_codec(codec),
-        m_sampleRate(sampleRate), m_channels(channels), m_bitrate(bitrate), m_frameSize(frameSize),
-        m_input_mode(1), m_resampler(NULL)
+        m_sampleRate(sampleRate), m_channels(channels), m_bitrate(bitrate), m_frameSize(frameSize)
     {}
     virtual ~BaseEncoder() {
         delete m_resampler;
         m_resampler = NULL;
+        m_samples.clear();
         m_samples_list.clear();
     }
 
     // base interfaces
     virtual void set_complexity(int complexity) {}
     virtual void set_bitrate(int bitrate) {}
-    virtual void set_input_parameters(int sampleRate, int channels) {
+
+    void init_resampler(int sampleRate, int channels) {
         //LOGI("[enc] input parameters="<<sampleRate<<"/"<<channels);
+        if ((sampleRate == 0 && channels == 0) ||
+            (sampleRate == m_sampleRate && channels == m_channels)) {
+            delete m_resampler;
+            m_resampler = NULL;
+            return;
+        }
         if (m_resampler == NULL) {
             m_resampler = new MyResampler(sampleRate, channels, m_sampleRate, m_channels);
         } else {
             m_resampler->Reset(sampleRate, channels, m_sampleRate, m_channels);
         }
     }
-    virtual void set_input_mode(int mode) {
-        // mode: 0 - frame by frame, else continuous samples.
-        if (mode != m_input_mode) {
-            m_input_mode = mode;
-            m_samples_list.clear(); // mode-0
-            m_samples.clear();      // non mode-0
-        }
-    }
-    int check_samples(int length) {
-        int iret = 0;
-        if (m_input_mode == 0) {
-            while (m_samples_list.size() >= MAX_SAMPLES_NUMBER) {
-                m_samples_list.pop_front();
-            }
-            while(!m_samples_list.empty()) {
-                auto it = m_samples_list.front();
-                if (it.size() < length) {
-                    m_samples_list.pop_front();
-                } else {
-                    iret = 1;
-                    break;
-                }
-            }
+    int check_samples() {
+        if (m_samples_list.size() >= MAX_SAMPLES_NUMBER) {
+            int delta = std::max(int(m_frameSize-3), 5);
+            //LOGI("now="<<NowMs()<<", last="<<m_last_output_time);
+            return NowMs() >= m_last_output_time + delta ? 1 : 0;
         } else {
-            if (m_samples.size() >= MAX_SAMPLES_NUMBER * 960) {
-                LOGI("[enc] input too many samples="<<m_samples.size());
-            }
-            if (m_samples.size() >= length) {
-                iret = 1;
-            }
+            return 0;
         }
-        return iret;
     }
     void push_samples(const int16_t* data, int size) {
-        if (m_input_mode == 0) {
-            Int16Array samples(data, data + size);
-            m_samples_list.push_back(samples);
-        } else {
-            m_samples.insert(m_samples.end(), data, data+size);
+        while (m_samples_list.size() >= MAX_SAMPLES_NUMBER) {
+            m_samples_list.pop_front();
         }
+        Int16Array samples(data, data + size);
+        m_samples_list.push_back(samples);
     }
-    bool pop_samples(Int16Array &samples, size_t length) {
-        if (m_input_mode == 0) {
-            if (!m_samples_list.empty()) {
-                auto it = m_samples_list.front();
-                if (it.size() >= length) {
-                    samples.assign(it.begin(), it.end());
+    virtual int input(const int16_t* data, int size, int sampleRate, int channels) {
+        auto it = m_samples.end();
+        m_samples.insert(it, data, data + size);
+
+        init_resampler(sampleRate, channels);
+        size_t inputFrameSamplesSize = sampleRate / 1000.0 * m_frameSize * channels;
+        if (!m_resampler) {
+            inputFrameSamplesSize = getCodecFrameSamplesSize();
+        }
+
+        //LOGI("[enc] input samples size:"<<inputFrameSamplesSize","<<m_samples.size()<<","<<m_samples_list.size());
+        if (m_samples.size() >= inputFrameSamplesSize) {
+            if (m_resampler) {
+                int iret = m_resampler->Push(&m_samples[0], inputFrameSamplesSize);
+                if (iret > 0) {
+                    const int16_t* newData = m_resampler->Data();
+                    size_t codecFrameSamplesSize = getCodecFrameSamplesSize();
+                    push_samples(newData, codecFrameSamplesSize);
+                } else if (iret == 0) {
+                    push_samples(&m_samples[0], inputFrameSamplesSize);
+                } else {
+                    LOGE("encode-input resampler failed");
+                    m_samples.clear();
+                    return -1;
                 }
-                m_samples_list.pop_front();
-            }
-        } else {
-            if (m_samples.size() >= length) {
-                auto it = m_samples.begin();
-                samples.assign(it, it + length);
-                m_samples.erase(it, it + length);
-            }
-        }
-        return !samples.empty();
-    }
-    virtual int input(const int16_t* data, int size) {
-        if (m_resampler) {
-            int iret = m_resampler->Push(data, (size_t)size);
-            //LOGI("[enc] input resample size="<<size<<" to "<<iret);
-            if (iret > 0) {
-                const int16_t* newData = m_resampler->Data();
-                push_samples(newData, iret);
-            } else if (iret == 0) {
-                push_samples(data, size);
             } else {
-                LOGE("encode-input resampler failed");
-                return -1;
+                push_samples(&m_samples[0], inputFrameSamplesSize);
             }
-        } else {
-            push_samples(data, size);
+            m_samples.erase(m_samples.begin(), m_samples.begin() + inputFrameSamplesSize);
         }
-        size_t sampleSize = getRawSampleSize();
-        return check_samples(sampleSize);
+        return check_samples();
     }
     virtual bool output(String *out) {
-        if (!out) {
+        if (!out || m_samples_list.empty()) {
             return false;
         }
 
-        Int16Array samples;
-        size_t sampleSize = getRawSampleSize();
-        if (!pop_samples(samples, sampleSize)) {
-            return false;
+        size_t iret = -1;
+        size_t codecFrameSamplesSize = getCodecFrameSamplesSize();
+        auto samples = m_samples_list.front();
+        if (samples.size() >= codecFrameSamplesSize) {
+            size_t bufferSize = getMaxEncodedSize();
+            uint8_t *buffer = new uint8_t[bufferSize];
+            iret = encodePacket(samples, codecFrameSamplesSize, buffer, bufferSize);
+            if (iret > 0) {
+                out->assign((char *)buffer, iret);
+                m_last_output_time = NowMs();
+            }
+            m_samples_list.pop_front();
+            delete [] buffer;
         }
-
-        size_t bufferSize = getMaxEncodedSize();
-        uint8_t *buffer = new uint8_t[bufferSize];
-        size_t iret = encodePacket(samples, sampleSize, buffer, bufferSize);
-        if (iret > 0) {
-            out->assign((char *)buffer, iret);
-        }
-
-        delete [] buffer;
         return (iret > 0);
     }
 
 protected:
-    virtual size_t getRawSampleSize() {
+    virtual size_t getCodecFrameSamplesSize() {
         return static_cast<size_t>(m_sampleRate/1000.0*m_frameSize*m_channels);
     }
     virtual size_t getMaxEncodedSize() {
-        return getRawSampleSize() * 8;
+        return getCodecFrameSamplesSize() * 8;
     }
     virtual size_t encodePacket(Int16Array &samples, int sampleSize, uint8_t *buffer, size_t bufferSize) = 0;
 
@@ -170,8 +146,8 @@ protected:
     float m_frameSize; //ms
 
 private:
-    int m_input_mode;
-    MyResampler *m_resampler;
+    uint32_t m_last_output_time = 0;
+    MyResampler *m_resampler = nullptr;
     Int16Array m_samples;
     std::deque<Int16Array> m_samples_list;
 };
@@ -188,7 +164,9 @@ public:
         } else {
             iret = WebRtcG711_EncodeU(&(samples[0]), sampleSize, buffer);
         }
-        LOGI("yzxu, total-size="<<samples.size()<<",used="<<sampleSize<<",max="<<bufferSize<<", ret="<<iret);
+        if (iret <= 0) {
+            LOGI("[g711-enc] error total-size="<<samples.size()<<",used="<<sampleSize<<",max="<<bufferSize<<", ret="<<iret);
+        }
         return iret;
     }
 };
@@ -196,7 +174,7 @@ public:
 class COpusEncoder : public BaseEncoder {
 public:
     COpusEncoder(float frameSize, int sampleRate, int channels, int bitrate, bool isVoip)
-        : BaseEncoder(OPUS, sampleRate, channels, bitrate, frameSize), m_enc(NULL) {
+        : BaseEncoder(OPUS, sampleRate, channels, bitrate, frameSize) {
         int err = 0;
         int application = (isVoip ? OPUS_APPLICATION_VOIP : OPUS_APPLICATION_AUDIO);
         m_enc = opus_encoder_create(sampleRate, channels, application, &err);
@@ -247,7 +225,7 @@ public:
     }
 
 private:
-    OpusEncoder *m_enc;
+    OpusEncoder *m_enc = nullptr;
 };
 
 Encoder* CreateEncoder(int codec, float frameSize, int sampleRate, int channels, int bitrate, bool isVoip) {
@@ -267,23 +245,28 @@ Encoder* CreateEncoder(int codec, float frameSize, int sampleRate, int channels,
 class EmptyDecoder : public Decoder {
 public:
     virtual ~EmptyDecoder() {}
-    virtual void set_output_parameters(int sampleRate, int channels) {}
     virtual int input(const char *data, size_t size) {return -1;}
-    virtual bool output(Int16Array *out) {return false;}
+    virtual bool output(Int16Array *out, int sampleRate, int channels) {return false;}
 };
 
 class BaseDecoder : public Decoder {
 public:
     BaseDecoder(int codec, int sampleRate, int channels)
-        : m_codec(codec), m_sampleRate(sampleRate), m_channels(channels), m_resampler(NULL)
+        : m_codec(codec), m_sampleRate(sampleRate), m_channels(channels)
     {}
     virtual ~BaseDecoder() {
         delete m_resampler;
         m_resampler = NULL;
         m_packet_list.clear();
     }
-    virtual void set_output_parameters(int sampleRate, int channels) {
-        LOGI("[dec] output parameters="<<sampleRate<<"/"<<channels);
+    void init_resampler(int sampleRate, int channels) {
+        //LOGI("[dec] output parameters="<<sampleRate<<"/"<<channels);
+        if ((sampleRate == 0 && channels == 0) ||
+            (sampleRate == m_sampleRate && channels == m_channels)) {
+            delete m_resampler;
+            m_resampler = NULL;
+            return;
+        }
         if (m_resampler == NULL) {
             m_resampler = new MyResampler(m_sampleRate, m_channels, sampleRate, channels);
         } else {
@@ -296,9 +279,9 @@ public:
         }
         Uint8Array packet(data, data+size);
         m_packet_list.push_back(packet);
-        return 1;
+        return (m_packet_list.size() >= MAX_PACKET_NUMBER);
     }
-    virtual bool output(Int16Array *out) {
+    virtual bool output(Int16Array *out, int sampleRate, int channels) {
         if (!out || m_packet_list.empty()) {
             return false;
         }
@@ -309,6 +292,7 @@ public:
 
         size_t iret = decodePacket(packet, buffer, bufferSize);
         if (iret > 0) {
+            init_resampler(sampleRate, channels);
             if (m_resampler) {
                 int iret2 = m_resampler->Push(buffer, iret);
                 if (iret2 > 0) {
@@ -343,8 +327,8 @@ protected:
     int m_channels;
 
 private:
+    MyResampler *m_resampler = nullptr;
     std::deque<Uint8Array> m_packet_list;
-    MyResampler *m_resampler;
 };
 
 class CG711Decoder : public BaseDecoder {
@@ -365,8 +349,7 @@ public:
 
 class COpusDecoder : public BaseDecoder {
 public:
-    COpusDecoder(int sampleRate, int channels)
-        : BaseDecoder(OPUS, sampleRate, channels), m_dec(NULL) {
+    COpusDecoder(int sampleRate, int channels) : BaseDecoder(OPUS, sampleRate, channels) {
         int err = 0;
         m_dec = opus_decoder_create(sampleRate, channels, &err);
         if (m_dec == NULL) {
@@ -388,7 +371,7 @@ public:
     }
 
 private:
-    OpusDecoder *m_dec;
+    OpusDecoder *m_dec = nullptr;
 };
 
 Decoder* CreateDecoder(int codec, int sampleRate, int channels) {
@@ -435,15 +418,9 @@ void Encoder_setBitrate(audio::Encoder *self, int bitrate)
 }
 
 EMSCRIPTEN_KEEPALIVE
-void Encoder_setInputParameters(audio::Encoder *self, int sampleRate, int channels)
+int Encoder_input(audio::Encoder *self, const int16_t *data, int size, int sampleRate, int channels)
 {
-    self->set_input_parameters(sampleRate, channels);
-}
-
-EMSCRIPTEN_KEEPALIVE
-int Encoder_input(audio::Encoder *self, const int16_t *data, int size)
-{
-    return self->input(data, size);
+    return self->input(data, size, sampleRate, channels);
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -468,21 +445,15 @@ void Decoder_delete(audio::Decoder *self)
 }
 
 EMSCRIPTEN_KEEPALIVE
-void Decoder_setOutputParameters(audio::Decoder *self, int sampleRate, int channels)
-{
-    self->set_output_parameters(sampleRate, channels);
-}
-
-EMSCRIPTEN_KEEPALIVE
 int Decoder_input(audio::Decoder *self, const char* data, size_t size)
 {
     return self->input(data,size);
 }
 
 EMSCRIPTEN_KEEPALIVE
-bool Decoder_output(audio::Decoder *self, Int16Array *out)
+bool Decoder_output(audio::Decoder *self, Int16Array *out, int sampleRate, int channels)
 {
-    return self->output(out);
+    return self->output(out, sampleRate, channels);
 }
 
 } // extern "C"

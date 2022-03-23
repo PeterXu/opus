@@ -21,14 +21,11 @@ String getCodecName(int codec) {
     }
 }
 
-int64_t GetTimeMs(const struct timeval *tv) {
-    return tv->tv_sec * 1000 + tv->tv_usec / 1000;
-}
-
-int64_t NowMs() {
+uint32_t NowMs() {
     struct timeval tv;
     gettimeofday(&tv, 0);
-    return GetTimeMs(&tv);
+    uint32_t time = uint32_t(tv.tv_sec * 1000) + uint32_t(tv.tv_usec / 1000);
+    return time;
 }
 
 int RandNumber() {

@@ -15,8 +15,8 @@ typedef std::vector<int16_t> Int16Array;
 #define LOGI(...) std::cout<<__VA_ARGS__<<std::endl
 #define LOGE(...) std::cerr<<__VA_ARGS__<<std::endl
 
-#define MAX_SAMPLES_NUMBER (50*5)
-#define MAX_PACKET_NUMBER  (50*5)
+#define MAX_SAMPLES_NUMBER (7)
+#define MAX_PACKET_NUMBER  (5)
 
 enum AVCodecs {
     UnknownCodec = 0,
@@ -28,7 +28,7 @@ enum AVCodecs {
 bool isCodecValid(int codec);
 String getCodecName(int codec);
 
-int64_t NowMs();
+uint32_t NowMs();
 int RandNumber();
 uint32_t RandTimestamp();
 

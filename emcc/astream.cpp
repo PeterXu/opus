@@ -10,9 +10,7 @@ namespace audio {
 
 class LocalStream {
 public:
-    LocalStream() : m_enc(NULL), m_ptype(-1), m_seq(1000), m_ssrc(0), m_timestamp(0),
-    m_frame_size(0), m_delta_ts(0), m_last_time(0)
-    {}
+    LocalStream() {}
     ~LocalStream() {
         delete m_enc;
         m_enc = NULL;
@@ -37,12 +35,8 @@ public:
         m_ssrc = ssrc;
         m_ptype = payloadType;
     }
-    void set_input_parameters(int sampleRate, int channels) {
-        //LOGI("[local] set input parameters: "<<sampleRate<<"/"<<channels);
-        if (m_enc) m_enc->set_input_parameters(sampleRate, channels);
-    }
-    int input(const int16_t *data, int size) {
-        if (m_enc) return m_enc->input(data, size);
+    int input(const int16_t *data, int size, int sampleRate, int channels) {
+        if (m_enc) return m_enc->input(data, size, sampleRate, channels);
         return -1;
     }
     static inline int16_t clipFloatToInt16(float value) {
@@ -54,7 +48,6 @@ public:
         if (!(channels == 1 || channels == 2)) {
             return -1;
         }
-        set_input_parameters(sampleRate, channels);
 
         // convert float to int16_t
         Int16Array array;
@@ -71,7 +64,7 @@ public:
                 array[i*2+1] = clipFloatToInt16(data[i + size_per_channel]);
             }
         }
-        return input(&array[0], size);
+        return input(&array[0], size, sampleRate, channels);
     }
     bool output(String *out) {
         if (m_enc && out) {
@@ -98,7 +91,7 @@ public:
 
 private:
     uint32_t gen_timestamp() {
-        int64_t now = NowMs();
+        uint32_t now = NowMs();
         uint32_t ts = m_timestamp; // last
         if (ts == 0) {
             ts = RandTimestamp();
@@ -117,23 +110,22 @@ private:
     }
 
 private:
-    Encoder* m_enc;
-    int m_ptype;
-    uint16_t m_seq;
-    uint32_t m_ssrc;
-    uint32_t m_timestamp;
+    Encoder* m_enc = nullptr;
+    int m_ptype = -1;
+    uint16_t m_seq = 1000;
+    uint32_t m_ssrc = 0;
+    uint32_t m_timestamp = 0;
 
-    float m_frame_size;
-    uint32_t m_delta_ts;
-    int64_t m_last_time;
+    float m_frame_size = 20.0f;
+    uint32_t m_delta_ts = 0;
+    uint32_t m_last_time = 0;
 };
 
 // RemoteStream
 
 class RemoteStream {
 public:
-    RemoteStream() : m_last_dec(NULL)
-    {}
+    RemoteStream() {}
     ~RemoteStream() {
         std::map<int, Decoder*>::iterator it = m_decs.begin();
         for (; it != m_decs.end(); it++) {
@@ -147,12 +139,6 @@ public:
             if (dec == m_last_dec) m_last_dec = NULL;
             if (dec) delete dec;
             m_decs[payloadType] = CreateDecoder(codec, sampleRate, channels);
-        }
-    }
-    void set_output_parameters(int sampleRate, int channels) {
-        std::map<int, Decoder*>::iterator it = m_decs.begin();
-        for (; it != m_decs.end(); it++) {
-            it->second->set_output_parameters(sampleRate, channels);
         }
     }
     int input(const char *data, size_t size) {
@@ -171,16 +157,16 @@ public:
         }
         return iret;
     }
-    bool output(Int16Array *out) {
+    bool output(Int16Array *out, int sampleRate, int channels) {
         if (m_last_dec && out) {
-            return m_last_dec->output(out);
+            return m_last_dec->output(out, sampleRate, channels);
         } else {
             return false;
         }
     }
 
 private:
-    Decoder* m_last_dec;
+    Decoder* m_last_dec = nullptr;
     std::map<int, Decoder*> m_decs;
 };
 
@@ -224,15 +210,9 @@ void LocalStream_setRtpParameters(audio::LocalStream *self, int ssrc, int payloa
 }
 
 EMSCRIPTEN_KEEPALIVE
-void LocalStream_setInputParameters(audio::LocalStream *self, int sampleRate, int channels)
+int LocalStream_input(audio::LocalStream *self, const int16_t *data, int size, int sampleRate, int channels)
 {
-    self->set_input_parameters(sampleRate, channels);
-}
-
-EMSCRIPTEN_KEEPALIVE
-int LocalStream_input(audio::LocalStream *self, const int16_t *data, int size)
-{
-    return self->input(data, size);
+    return self->input(data, size, sampleRate, channels);
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -269,21 +249,15 @@ void RemoteStream_registerPayloadType(audio::RemoteStream *self,
 }
 
 EMSCRIPTEN_KEEPALIVE
-void RemoteStream_setOutputParameters(audio::RemoteStream *self, int sampleRate, int channels)
-{
-    self->set_output_parameters(sampleRate, channels);
-}
-
-EMSCRIPTEN_KEEPALIVE
 int RemoteStream_input(audio::RemoteStream *self, const char *data, size_t size)
 {
     return self->input(data, size);
 }
 
 EMSCRIPTEN_KEEPALIVE
-bool RemoteStream_output(audio::RemoteStream *self, Int16Array *out)
+bool RemoteStream_output(audio::RemoteStream *self, Int16Array *out, int sampleRate, int channels)
 {
-    return self->output(out);
+    return self->output(out, sampleRate, channels);
 }
 
 } // extern "C"

@@ -1,8 +1,8 @@
 var libac = null;
 import("../libac.js").then((evt) => {
-    libac = evt.default;
-    console.log(evt, libac);
-    libac.onload = function(){
+    console.log(evt);
+    evt.default.onload = function(){
+        libac = evt.default;
         do_testing();
     };
 });
@@ -31,9 +31,8 @@ function encodeOne(codec) {
     } else {
         enc = libac.CreatePcmaEncoder(frameSize);
     }
-    enc.setInputParameters(sampleRate, channels);
     enc.setBitrate(64000);
-    enc.input(samples);
+    enc.input(samples, sampleRate, channels);
     var packet = enc.output();
     if (!packet) {
         console.log("no encoding output");
@@ -50,22 +49,22 @@ function ToExit(dec, enc) {
 
 function ToEncode(enc, decoded, debug) {
     enc.input(decoded);
-    var data = enc.output();
+    var data = enc.output(sampleRate, channels);
     while(data){
         if (debug)
             console.log("encoded  "+data.length+" bytes");
-        data = enc.output();
+        data = enc.output(sampleRate, channels);
     }
 }
 
 function ToDecode(dec, encoded, enc, debug) {
-    dec.input(encoded);
-    var data = dec.output();
+    dec.input(encoded, sampleRate, channels);
+    var data = dec.output(sampleRate, channels);
     while(data){
         if (debug)
             console.log("decoded "+data.length+" samples");
         ToEncode(enc, data, debug);
-        data = dec.output();
+        data = dec.output(sampleRate, channels);
     }
 }
 
@@ -80,8 +79,6 @@ function testCodec1(codec){
         dec = libac.CreatePcmaDecoder();
     }
 
-    //dec.setOutputParameters(sampleRate, channels);
-    //dec.setOutputParameters(8000, 1);
     dec.input(packet);
     var decoded = dec.output();
     if (!decoded) {
@@ -112,14 +109,10 @@ function testCodec2(codec1, codec2){
         var sampleRateIn = sampleRate;
         var channelsIn = channels;
         dec = libac.CreateOpusDecoder(sampleRate, channels);
-        dec.setOutputParameters(sampleRateIn, channelsIn);
-        enc.setInputParameters(sampleRateIn, channelsIn);
     } else {
         var sampleRateOut = 8000;
         var channelsOut = 1;
         dec = libac.CreatePcmaDecoder();
-        dec.setOutputParameters(sampleRate, channels);
-        enc.setInputParameters(sampleRateOut, channelsOut);
     }
 
     var count = 10;
@@ -140,17 +133,15 @@ function testStream1() {
     var stream = new libac.LocalStream();
     stream.setCodecParameters(libac.Consts.OPUS, frameSize,sampleRate,channels,8000,true);
     stream.setRtpParameters(1, 103);
-    stream.setInputParameters(sampleRate, channels);
     stream.setCodecBitrate(64000)
 
-    stream.input(samples);
+    stream.input(samples, sampleRate, channels);
     var data = stream.output();
     if (data) {
         console.log("local-stream output rtp:", data.length);
 
         var recv = new libac.RemoteStream();
         recv.registerPayloadType(103, libac.Consts.OPUS, sampleRate, channels);
-        recv.setOutputParameters(sampleRate, channels);
         recv.input(data);
         var decoded = recv.output();
         console.log(decoded);

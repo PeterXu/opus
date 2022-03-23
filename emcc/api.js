@@ -63,21 +63,16 @@ Encoder.prototype.setBitrate = function(bitrate)
     Module._Encoder_setBitrate(this.enc, bitrate);
 }
 
-Encoder.prototype.setInputParameters = function(samplerate, channels)
-{
-    Module._Encoder_setInputParameters(this.enc, samplerate, channels);
-}
-
 // add samples to the encoder buffer. (samples.BYTES_PER_ELEMENT is 2)
 // @param samples: Int16Array of interleaved (if multiple channels) samples
-Encoder.prototype.input = function(samples)
+Encoder.prototype.input = function(samples, samplerate, channels)
 {
     var nbytes = samples.length*samples.BYTES_PER_ELEMENT;
     var ptr = Module._malloc(nbytes);
     var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, nbytes);
     pdata.set(new Uint8Array(samples.buffer, samples.byteOffset, nbytes));
 
-    var iret = Module._Encoder_input(this.enc, ptr, samples.length);
+    var iret = Module._Encoder_input(this.enc, ptr, samples.length, samplerate, channels);
     Module._free(ptr);
     return iret;
 }
@@ -114,11 +109,6 @@ Decoder.prototype.destroy = function()
     Module._Int16Array_delete(this.out);
 }
 
-Decoder.prototype.setOutputParameters = function(samplerate, channels)
-{
-    Module._Decoder_setOutputParameters(this.dec, samplerate, channels);
-}
-
 // add packet to the decoder buffer. (packet.BYTES_PER_ELEMENT is 1)
 // @param packet: Uint8Array
 Decoder.prototype.input = function(packet)
@@ -135,9 +125,9 @@ Decoder.prototype.input = function(packet)
 
 // output the next decoded samples
 // return samples (interleaved if multiple channels) as Int16Array (valid until next output call) or null if no output
-Decoder.prototype.output = function()
+Decoder.prototype.output = function(samplerate, channels)
 {
-    var ok = Module._Decoder_output(this.dec, this.out);
+    var ok = Module._Decoder_output(this.dec, this.out, samplerate, channels);
     if (ok) {
         return new Int16Array(Module.HEAPU8.buffer, Module._Int16Array_data(this.out), Module._Int16Array_size(this.out));
     } else {
@@ -192,28 +182,22 @@ LocalStream.prototype.setRtpParameters = function(ssrc, payloadtype)
     Module._LocalStream_setRtpParameters(this.stream, ssrc, payloadtype);
 }
 
-// set local-stream input parameters
-LocalStream.prototype.setInputParameters = function(samplerate, channels)
-{
-    Module._LocalStream_setInputParameters(this.stream, samplerate, channels);
-}
-
 // add samples to the local-stream encoder buffer. (samples.BYTES_PER_ELEMENT is 2)
 // @param samples: Int16Array of interleaved (if multiple channels) samples
-LocalStream.prototype.input = function(samples)
+LocalStream.prototype.input = function(samples, samplerate, channels)
 {
     var nbytes = samples.length*samples.BYTES_PER_ELEMENT;
     var ptr = Module._malloc(nbytes);
     var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, nbytes);
     pdata.set(new Uint8Array(samples.buffer, samples.byteOffset, nbytes));
 
-    var iret = Module._LocalStream_input(this.stream, ptr, samples.length);
+    var iret = Module._LocalStream_input(this.stream, ptr, samples.length, samplerate, channels);
     Module._free(ptr);
     return iret;
 }
 
 // add samples to the local-stream encoder buffer. (samples.BYTES_PER_ELEMENT is 4)
-// @param samples: Float32Array of not-interleaved (if multiple channels) samples
+// @param samples: Float32Array of planar (if multiple channels) samples
 LocalStream.prototype.input2 = function(samples, sampleRate, channels) {
     var nbytes = samples.length*samples.BYTES_PER_ELEMENT;
     var ptr = Module._malloc(nbytes);
@@ -264,12 +248,6 @@ RemoteStream.prototype.registerPayloadType = function(payloadtype, codec, sample
     Module._RemoteStream_registerPayloadType(this.stream, payloadtype, codec, samplerate, channels);
 }
 
-// set remote-stream output parameters
-RemoteStream.prototype.setOutputParameters = function(samplerate, channels)
-{
-    Module._RemoteStream_setOutputParameters(this.stream, samplerate, channels);
-}
-
 // add packet to the remote-stream's decoder buffer. (packet.BYTES_PER_ELEMENT is 1)
 // @param packet: Uint8Array
 RemoteStream.prototype.input = function(packet)
@@ -286,9 +264,9 @@ RemoteStream.prototype.input = function(packet)
 
 // output the next decoded samples
 // return samples (interleaved if multiple channels) as Int16Array (valid until next output call) or null if no output
-RemoteStream.prototype.output = function()
+RemoteStream.prototype.output = function(samplerate, channels)
 {
-    var ok = Module._RemoteStream_output(this.stream, this.out);
+    var ok = Module._RemoteStream_output(this.stream, this.out, samplerate, channels);
     if (ok) {
         return new Int16Array(Module.HEAPU8.buffer, Module._Int16Array_data(this.out), Module._Int16Array_size(this.out));
     } else {
