@@ -38,22 +38,38 @@ public:
         m_ptype = payloadType;
     }
     void set_input_parameters(int sampleRate, int channels) {
-        LOGI("[local] set input parameters: "<<sampleRate<<"/"<<channels);
+        //LOGI("[local] set input parameters: "<<sampleRate<<"/"<<channels);
         if (m_enc) m_enc->set_input_parameters(sampleRate, channels);
     }
     int input(const int16_t *data, int size) {
         if (m_enc) return m_enc->input(data, size);
         return -1;
     }
+    static inline int16_t clipFloatToInt16(float value) {
+        value = (value >= 1.0f) ? 1.0f : ((value <= -1.0f) ? -1.0f : value);
+        int16_t s = (value < 0) ? (value * 0x8000) : (value * 0x7FFF);
+        return s;
+    }
     int input2(const float *data, int size, int sampleRate, int channels) {
+        if (!(channels == 1 || channels == 2)) {
+            return -1;
+        }
         set_input_parameters(sampleRate, channels);
 
-        // convert from float to int16_t
+        // convert float to int16_t
         Int16Array array;
         array.resize(size);
-        for (int i=0; i < size; i++) {
-            float s = std::max(-1.0f, std::min(1.0f, data[i]));
-            array[i] =  s < 0 ? (s * 0x8000) : (s * 0x7FFF);
+        if (channels == 1) {
+            for (int i=0; i < size; i++) {
+                array[i] = clipFloatToInt16(data[i]);
+            }
+        } else {
+            // convert planar to intervaled
+            int size_per_channel = size / 2;
+            for (int i=0; i < size_per_channel; i++) {
+                array[i] = clipFloatToInt16(data[i]);
+                array[i*2+1] = clipFloatToInt16(data[i + size_per_channel]);
+            }
         }
         return input(&array[0], size);
     }

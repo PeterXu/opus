@@ -34,7 +34,7 @@ public:
     BaseEncoder(int codec, int sampleRate, int channels, int bitrate, float frameSize)
         : m_codec(codec),
         m_sampleRate(sampleRate), m_channels(channels), m_bitrate(bitrate), m_frameSize(frameSize),
-        m_input_mode(0), m_resampler(NULL)
+        m_input_mode(1), m_resampler(NULL)
     {}
     virtual ~BaseEncoder() {
         delete m_resampler;
@@ -46,7 +46,7 @@ public:
     virtual void set_complexity(int complexity) {}
     virtual void set_bitrate(int bitrate) {}
     virtual void set_input_parameters(int sampleRate, int channels) {
-        LOGI("[enc] input parameters="<<sampleRate<<"/"<<channels);
+        //LOGI("[enc] input parameters="<<sampleRate<<"/"<<channels);
         if (m_resampler == NULL) {
             m_resampler = new MyResampler(sampleRate, channels, m_sampleRate, m_channels);
         } else {
@@ -78,7 +78,7 @@ public:
             }
         } else {
             if (m_samples.size() >= MAX_SAMPLES_NUMBER * 960) {
-                // TODO
+                LOGI("[enc] input too many samples="<<m_samples.size());
             }
             if (m_samples.size() >= length) {
                 iret = 1;
@@ -115,7 +115,7 @@ public:
     virtual int input(const int16_t* data, int size) {
         if (m_resampler) {
             int iret = m_resampler->Push(data, (size_t)size);
-            LOGI("[enc] input resample size="<<size<<" to "<<iret);
+            //LOGI("[enc] input resample size="<<size<<" to "<<iret);
             if (iret > 0) {
                 const int16_t* newData = m_resampler->Data();
                 push_samples(newData, iret);
