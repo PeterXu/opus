@@ -96,7 +96,7 @@ public:
                 } else if (iret == 0) {
                     push_samples(&m_samples[0], inputFrameSamplesSize);
                 } else {
-                    LOGE("encode-input resampler failed");
+                    LOGE("[enc] input resampler failed");
                     m_samples.clear();
                     return -1;
                 }
@@ -122,6 +122,8 @@ public:
             if (iret > 0) {
                 out->assign((char *)buffer, iret);
                 m_last_output_time = NowMs();
+            } else {
+                LOGE("[enc] encode error="<<iret);
             }
             m_samples_list.pop_front();
             delete [] buffer;
@@ -165,7 +167,7 @@ public:
             iret = WebRtcG711_EncodeU(&(samples[0]), sampleSize, buffer);
         }
         if (iret <= 0) {
-            LOGI("[g711-enc] error total-size="<<samples.size()<<",used="<<sampleSize<<",max="<<bufferSize<<", ret="<<iret);
+            LOGI("[enc] g711 encode error ret="<<iret<<", size="<<sampleSize<<"/"<<samples.size()<<"/"<<bufferSize);
         }
         return iret;
     }
@@ -185,7 +187,7 @@ public:
                 opus_encoder_ctl(m_enc, OPUS_SET_BITRATE(bitrate));
             }
         } else {
-            LOGE("[opus-enc] error while creating opus encoder: "<<err);
+            LOGE("[enc] opus create encoder error="<<err);
         }
     }
     virtual ~COpusEncoder() {
@@ -302,12 +304,14 @@ public:
                 } else if (iret2 == 0) {
                     *out = Int16Array(buffer, buffer + iret);
                 } else {
-                    LOGE("decode-output resampler failed");
+                    LOGE("[dec] input resampler failed");
                     iret = -1;
                 }
             } else {
                 *out = Int16Array(buffer, buffer + iret);
             }
+        } else {
+            LOGE("[dec] decode error="<<iret);
         }
 
         m_packet_list.pop_front();
@@ -353,7 +357,7 @@ public:
         int err = 0;
         m_dec = opus_decoder_create(sampleRate, channels, &err);
         if (m_dec == NULL) {
-            LOGE("[opus-dec] error while creating opus decoder: "<<err);
+            LOGE("[dec] create opus decode error="<<err);
         }
     }
     virtual ~COpusDecoder() {
