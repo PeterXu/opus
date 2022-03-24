@@ -294,6 +294,8 @@ public:
 
         size_t iret = decodePacket(packet, buffer, bufferSize);
         if (iret > 0) {
+            iret = iret * m_channels; // total output samples
+            //LOGI("[dec] output samples size="<<iret<<", channels="<<channels<<", "<<m_channels<<","<<bufferSize);
             init_resampler(sampleRate, channels);
             if (m_resampler) {
                 int iret2 = m_resampler->Push(buffer, iret);
