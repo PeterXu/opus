@@ -229,6 +229,7 @@ function RemoteStream()
 {
     this.stream = Module._RemoteStream_new.apply(null, arguments);
     this.out = Module._Int16Array_new();
+    this.outf = Module._Float32Array_new();
 }
 
 // free remote-stream
@@ -236,6 +237,7 @@ RemoteStream.prototype.destroy = function()
 { 
     Module._RemoteStream_delete(this.stream); 
     Module._Int16Array_delete(this.out);
+    Module._Float32Array_delete(this.outf);
 }
 
 // register remote-stream mapping of payload-type => codec.
@@ -269,6 +271,18 @@ RemoteStream.prototype.output = function(samplerate, channels)
     var ok = Module._RemoteStream_output(this.stream, this.out, samplerate, channels);
     if (ok) {
         return new Int16Array(Module.HEAPU8.buffer, Module._Int16Array_data(this.out), Module._Int16Array_size(this.out));
+    } else {
+        return null;
+    }
+}
+
+// output the next decoded samples
+// return samples (planar if multiple channels) as Float32Array (valid until next output call) or null if no output
+RemoteStream.prototype.output2 = function(samplerate, channels)
+{
+    var ok = Module._RemoteStream_output2(this.stream, this.outf, samplerate, channels);
+    if (ok) {
+        return new Float32Array(Module.HEAPU8.buffer, Module._Float32Array_data(this.outf), Module._Float32Array_size(this.outf));
     } else {
         return null;
     }

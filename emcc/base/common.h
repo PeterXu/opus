@@ -11,12 +11,16 @@
 typedef std::string String;
 typedef std::vector<uint8_t> Uint8Array;
 typedef std::vector<int16_t> Int16Array;
+typedef std::vector<float> Float32Array;
 
 #define LOGI(...) std::cout<<__VA_ARGS__<<std::endl
 #define LOGE(...) std::cerr<<__VA_ARGS__<<std::endl
 
 #define MAX_SAMPLES_NUMBER (7)
 #define MAX_PACKET_NUMBER  (5)
+
+#define MIN_SAMPLE_RATE (8000)
+#define MAX_SAMPLE_RATE (96000)
 
 enum AVCodecs {
     UnknownCodec = 0,

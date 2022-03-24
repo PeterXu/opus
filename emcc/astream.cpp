@@ -57,10 +57,10 @@ public:
                 array[i] = clipFloatToInt16(data[i]);
             }
         } else {
-            // convert planar to intervaled
+            // convert planar to interleaved
             int size_per_channel = size / 2;
             for (int i=0; i < size_per_channel; i++) {
-                array[i] = clipFloatToInt16(data[i]);
+                array[i*2] = clipFloatToInt16(data[i]);
                 array[i*2+1] = clipFloatToInt16(data[i + size_per_channel]);
             }
         }
@@ -164,6 +164,48 @@ public:
             return false;
         }
     }
+    static inline float clipInt16ToFloat(int16_t value) {
+        float s = (value < 0) ? (value * 1.0f / 0x8000) : (value * 1.0f / 0x7FFF);
+        s = (s >= 1.0f) ? 1.0f : ((s <= -1.0f) ? -1.0f : s);
+        return s;
+    }
+    bool output2(Float32Array *out, int sampleRate, int channels) {
+        if (!m_last_dec || !out) {
+            return false;
+        }
+
+        int outputSampleRate = sampleRate;
+        int outputChannels = channels;
+        if (!m_last_dec->check_output_paramters(&outputSampleRate, &outputChannels)) {
+            LOGE("[remote] output2 invalid parameters="<<sampleRate<<"/"<<channels);
+            return false;
+        }
+
+        Int16Array tmpOut;
+        if (!m_last_dec->output(&tmpOut, sampleRate, channels)) {
+            return false;
+        }
+
+        const int16_t *data = &tmpOut[0];
+        size_t size = tmpOut.size();
+
+        // convert int16_t to float
+        auto &array = *out;
+        array.resize(size);
+        if (outputChannels == 1) {
+            for (size_t i=0; i < size; i++) {
+                array[i] = clipInt16ToFloat(data[i]);
+            }
+        } else {
+            // convert interleaved to planar
+            int size_per_channel = size / outputChannels;
+            for (int i=0; i < size_per_channel; i++) {
+                array[i] = clipInt16ToFloat(data[i*2]);
+                array[i+size_per_channel] = clipInt16ToFloat(data[i*2+1]);
+            }
+        }
+        return true;
+    }
 
 private:
     Decoder* m_last_dec = nullptr;
@@ -259,5 +301,12 @@ bool RemoteStream_output(audio::RemoteStream *self, Int16Array *out, int sampleR
 {
     return self->output(out, sampleRate, channels);
 }
+
+EMSCRIPTEN_KEEPALIVE
+bool RemoteStream_output2(audio::RemoteStream *self, Float32Array *out, int sampleRate, int channels)
+{
+    return self->output2(out, sampleRate, channels);
+}
+
 
 } // extern "C"

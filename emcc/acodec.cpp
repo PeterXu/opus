@@ -45,19 +45,26 @@ public:
     virtual void set_complexity(int complexity) {}
     virtual void set_bitrate(int bitrate) {}
 
-    void init_resampler(int sampleRate, int channels) {
+    bool init_resampler(int sampleRate, int channels) {
         //LOGI("[enc] input parameters="<<sampleRate<<"/"<<channels);
         if ((sampleRate == 0 && channels == 0) ||
             (sampleRate == m_sampleRate && channels == m_channels)) {
             delete m_resampler;
             m_resampler = NULL;
-            return;
+            return true;
+        }
+        if (sampleRate < MIN_SAMPLE_RATE ||
+            sampleRate > MAX_SAMPLE_RATE ||
+            channels < 1 ||
+            channels > 2) {
+            return false;
         }
         if (m_resampler == NULL) {
             m_resampler = new MyResampler(sampleRate, channels, m_sampleRate, m_channels);
         } else {
             m_resampler->Reset(sampleRate, channels, m_sampleRate, m_channels);
         }
+        return true;
     }
     int check_samples() {
         if (m_samples_list.size() >= MAX_SAMPLES_NUMBER) {
@@ -76,10 +83,14 @@ public:
         m_samples_list.push_back(samples);
     }
     virtual int input(const int16_t* data, int size, int sampleRate, int channels) {
+        if (!init_resampler(sampleRate, channels)) {
+            LOGE("[enc] input invalid parameters="<<sampleRate<<"/"<<channels);
+            return -1;
+        }
+
         auto it = m_samples.end();
         m_samples.insert(it, data, data + size);
 
-        init_resampler(sampleRate, channels);
         size_t inputFrameSamplesSize = sampleRate / 1000.0 * m_frameSize * channels;
         if (!m_resampler) {
             inputFrameSamplesSize = getCodecFrameSamplesSize();
@@ -249,6 +260,7 @@ public:
     virtual ~EmptyDecoder() {}
     virtual int input(const char *data, size_t size) {return -1;}
     virtual bool output(Int16Array *out, int sampleRate, int channels) {return false;}
+    virtual bool check_output_paramters(int *sampleRate, int *channels) {return false;}
 };
 
 class BaseDecoder : public Decoder {
@@ -261,19 +273,26 @@ public:
         m_resampler = NULL;
         m_packet_list.clear();
     }
-    void init_resampler(int sampleRate, int channels) {
+    bool init_resampler(int sampleRate, int channels) {
         //LOGI("[dec] output parameters="<<sampleRate<<"/"<<channels);
         if ((sampleRate == 0 && channels == 0) ||
             (sampleRate == m_sampleRate && channels == m_channels)) {
             delete m_resampler;
             m_resampler = NULL;
-            return;
+            return true;
+        }
+        if (sampleRate < MIN_SAMPLE_RATE ||
+            sampleRate > MAX_SAMPLE_RATE ||
+            channels < 1 ||
+            channels > 2) {
+            return false;
         }
         if (m_resampler == NULL) {
             m_resampler = new MyResampler(m_sampleRate, m_channels, sampleRate, channels);
         } else {
             m_resampler->Reset(m_sampleRate, m_channels, sampleRate, channels);
         }
+        return true;
     }
     virtual int input(const char *data, size_t size) {
         if (m_packet_list.size() >= MAX_PACKET_NUMBER) {
@@ -288,6 +307,11 @@ public:
             return false;
         }
 
+        if (!init_resampler(sampleRate, channels)) {
+            LOGE("[dec] output invalid parameters="<<sampleRate<<"/"<<channels);
+            return false;
+        }
+
         size_t bufferSize = getMaxDecodedSize();
         int16_t *buffer = new int16_t[bufferSize];
         std::deque<Uint8Array>::reference packet = m_packet_list.front();
@@ -296,7 +320,6 @@ public:
         if (iret > 0) {
             iret = iret * m_channels; // total output samples
             //LOGI("[dec] output samples size="<<iret<<", channels="<<channels<<", "<<m_channels<<","<<bufferSize);
-            init_resampler(sampleRate, channels);
             if (m_resampler) {
                 int iret2 = m_resampler->Push(buffer, iret);
                 if (iret2 > 0) {
@@ -319,6 +342,19 @@ public:
         m_packet_list.pop_front();
         delete []buffer;
         return (iret > 0);
+    }
+    virtual bool check_output_paramters(int *sampleRate, int *channels) {
+        if (!sampleRate || !channels) {
+            return false;
+        }
+        if (init_resampler(*sampleRate, *channels)) {
+            if (!m_resampler) {
+                *sampleRate = m_sampleRate;
+                *channels = m_channels;
+            }
+            return true;
+        }
+        return false;
     }
 
 protected:

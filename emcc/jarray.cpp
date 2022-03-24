@@ -55,4 +55,31 @@ void Int16Array_delete(Int16Array *self)
     delete self;
 }
 
+// Float32Array
+
+EMSCRIPTEN_KEEPALIVE
+size_t Float32Array_size(Float32Array *self)
+{
+    return self->size();
+}
+
+EMSCRIPTEN_KEEPALIVE
+Float32Array* Float32Array_new()
+{
+    return new std::vector<float>();
+}
+
+EMSCRIPTEN_KEEPALIVE
+const float* Float32Array_data(Float32Array *self)
+{
+    return &(*self)[0];
+}
+
+EMSCRIPTEN_KEEPALIVE
+void Float32Array_delete(Float32Array *self)
+{
+    delete self;
+}
+
+
 } // extern "C"
