@@ -10,7 +10,7 @@ public:
     virtual ~Encoder() {}
     virtual void set_complexity(int complexity) = 0;
     virtual void set_bitrate(int bitrate) = 0;
-    virtual int input(const int16_t* data, int size, int sampleRate, int channels) = 0;
+    virtual int input(const int16_t* data, size_t size, int sampleRate, int channels) = 0;
     virtual bool output(String *out) = 0;
 };
 Encoder* CreateEncoder(int codec, float frameSize, int sampleRate, int channels, int bitrate, bool isVoip);

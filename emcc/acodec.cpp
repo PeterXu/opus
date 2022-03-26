@@ -4,6 +4,7 @@
 #include "opus.h"
 #include "g711/g711_interface.h"
 #include "base/signal_processing.h"
+#include "base/buffer.h"
 
 namespace audio {
 
@@ -16,7 +17,7 @@ public:
     virtual ~EmptyEncoder() {}
     virtual void set_complexity(int complexity) {}
     virtual void set_bitrate(int bitrate) {}
-    virtual int input(const int16_t* data, int size, int sampleRate, int channels) {return -1;}
+    virtual int input(const int16_t* data, size_t size, int sampleRate, int channels) {return -1;}
     virtual bool output(String *out) {return false;}
 };
 
@@ -37,7 +38,12 @@ public:
     virtual ~BaseEncoder() {
         delete m_resampler;
         m_resampler = NULL;
-        m_samples.clear();
+        delete m_samples;
+        m_samples = NULL;
+        for (auto it=m_samples_list.begin(); it != m_samples_list.end(); it++) {
+            MySamples *one = *it;
+            delete one;
+        }
         m_samples_list.clear();
     }
 
@@ -68,53 +74,72 @@ public:
     }
     int check_samples() {
         if (m_samples_list.size() >= MAX_SAMPLES_NUMBER) {
-            int delta = std::max(int(m_frameSize-3), 5);
+            int delta = std::max(int(m_frameSize-4), 5);
             //LOGI("now="<<NowMs()<<", last="<<m_last_output_time);
             return NowMs() >= m_last_output_time + delta ? 1 : 0;
         } else {
             return 0;
         }
     }
-    void push_samples(const int16_t* data, int size) {
+    void push_samples(MySamples *samples) {
         while (m_samples_list.size() >= MAX_SAMPLES_NUMBER) {
+            auto samples = m_samples_list.front();
+            delete samples;
             m_samples_list.pop_front();
         }
-        Int16Array samples(data, data + size);
         m_samples_list.push_back(samples);
     }
-    virtual int input(const int16_t* data, int size, int sampleRate, int channels) {
+    virtual int input(const int16_t* data, size_t size, int sampleRate, int channels) {
         if (!init_resampler(sampleRate, channels)) {
             LOGE("[enc] input invalid parameters="<<sampleRate<<"/"<<channels);
             return -1;
         }
 
-        auto it = m_samples.end();
-        m_samples.insert(it, data, data + size);
+        uint32_t now = NowMs();
+        if (!m_samples) {
+            m_samples = new MySamples();
+        }
+        m_samples->append(data, size, now);
 
         size_t inputFrameSamplesSize = sampleRate / 1000.0 * m_frameSize * channels;
         if (!m_resampler) {
             inputFrameSamplesSize = getCodecFrameSamplesSize();
         }
 
-        //LOGI("[enc] input samples size:"<<inputFrameSamplesSize","<<m_samples.size()<<","<<m_samples_list.size());
-        if (m_samples.size() >= inputFrameSamplesSize) {
+        //LOGI("[enc] input samples size:"<<inputFrameSamplesSize","<<m_samples->size()<<","<<m_samples_list.size());
+        if (m_samples->size() >= inputFrameSamplesSize) {
+            auto samples = m_samples;
+
+            // first save residual data as new one.
+            m_samples = new MySamples();
+            size_t residual = samples->size() - inputFrameSamplesSize;
+            if (residual > 0) {
+                m_samples->set(samples->data(inputFrameSamplesSize), residual, samples->last_time(), samples->last_time());
+                samples->erase(inputFrameSamplesSize, -1);
+            }
+
+            // second resample if need
             if (m_resampler) {
-                int iret = m_resampler->Push(&m_samples[0], inputFrameSamplesSize);
+                int iret = m_resampler->Push(samples->data(0), samples->size());
                 if (iret > 0) {
                     const int16_t* newData = m_resampler->Data();
                     size_t codecFrameSamplesSize = getCodecFrameSamplesSize();
-                    push_samples(newData, codecFrameSamplesSize);
+
+                    auto samples2 = new MySamples();
+                    samples2->set(newData, codecFrameSamplesSize, samples->first_time(), samples->last_time());
+                    push_samples(samples2);
                 } else if (iret == 0) {
-                    push_samples(&m_samples[0], inputFrameSamplesSize);
+                    // nop and copy next
+                    push_samples(samples);
                 } else {
                     LOGE("[enc] input resampler failed");
-                    m_samples.clear();
+                    delete samples;
                     return -1;
                 }
             } else {
-                push_samples(&m_samples[0], inputFrameSamplesSize);
+                // nop and copy next
+                push_samples(samples);
             }
-            m_samples.erase(m_samples.begin(), m_samples.begin() + inputFrameSamplesSize);
         }
         return check_samples();
     }
@@ -126,18 +151,18 @@ public:
         size_t iret = -1;
         size_t codecFrameSamplesSize = getCodecFrameSamplesSize();
         auto samples = m_samples_list.front();
-        if (samples.size() >= codecFrameSamplesSize) {
+        if (samples->size() >= codecFrameSamplesSize) {
             size_t bufferSize = getMaxEncodedSize();
-            uint8_t *buffer = new uint8_t[bufferSize];
-            iret = encodePacket(samples, codecFrameSamplesSize, buffer, bufferSize);
+            char *buffer = m_alloc.get(bufferSize); // should not be deleted
+            iret = encodePacket(samples->data(), codecFrameSamplesSize, (uint8_t *)buffer, bufferSize);
             if (iret > 0) {
-                out->assign((char *)buffer, iret);
+                out->assign(buffer, buffer + iret);
                 m_last_output_time = NowMs();
             } else {
                 LOGE("[enc] encode error="<<iret);
             }
+            delete samples;
             m_samples_list.pop_front();
-            delete [] buffer;
         }
         return (iret > 0);
     }
@@ -149,7 +174,7 @@ protected:
     virtual size_t getMaxEncodedSize() {
         return getCodecFrameSamplesSize() * 8;
     }
-    virtual size_t encodePacket(Int16Array &samples, int sampleSize, uint8_t *buffer, size_t bufferSize) = 0;
+    virtual size_t encodePacket(Int16Array &samples, size_t sampleSize, uint8_t *buffer, size_t bufferSize) = 0;
 
 protected:
     int m_codec;
@@ -159,10 +184,11 @@ protected:
     float m_frameSize; //ms
 
 private:
-    uint32_t m_last_output_time = 0;
     MyResampler *m_resampler = nullptr;
-    Int16Array m_samples;
-    std::deque<Int16Array> m_samples_list;
+    MySamples *m_samples = nullptr;
+    std::deque<MySamples *> m_samples_list;
+    uint32_t m_last_output_time = 0;
+    MyAlloc<char> m_alloc;
 };
 
 class CG711Encoder : public BaseEncoder {
@@ -170,7 +196,7 @@ public:
     CG711Encoder(int codec, float frameSize) : BaseEncoder(codec, 8000, 1, 0, frameSize)
     {}
     virtual ~CG711Encoder() {}
-    virtual size_t encodePacket(Int16Array &samples, int sampleSize, uint8_t *buffer, size_t bufferSize) {
+    virtual size_t encodePacket(Int16Array &samples, size_t sampleSize, uint8_t *buffer, size_t bufferSize) {
         size_t iret = 0;
         if (m_codec == PCMA) {
             iret = WebRtcG711_EncodeA(&(samples[0]), sampleSize, buffer);
@@ -229,12 +255,12 @@ public:
         const size_t approx_encoded_bytes = num_10ms_frames_per_packet * 10 * bytes_per_ms;
         return 2 * approx_encoded_bytes;
     }
-    virtual size_t encodePacket(Int16Array &samples, int sampleSize, uint8_t *buffer, size_t bufferSize) {
-        size_t iret = 0;
+    virtual size_t encodePacket(Int16Array &samples, size_t sampleSize, uint8_t *buffer, size_t bufferSize) {
+        int iret = 0;
         if (m_enc) {
             iret = opus_encode(m_enc, &samples[0], sampleSize/m_channels, buffer, bufferSize);
         }
-        return iret;
+        return size_t(iret);
     }
 
 private:
@@ -271,6 +297,10 @@ public:
     virtual ~BaseDecoder() {
         delete m_resampler;
         m_resampler = NULL;
+        for (auto it=m_packet_list.begin(); it != m_packet_list.end(); it++) {
+            MyPacket *one = *it;
+            delete one;
+        }
         m_packet_list.clear();
     }
     bool init_resampler(int sampleRate, int channels) {
@@ -295,10 +325,12 @@ public:
         return true;
     }
     virtual int input(const char *data, size_t size) {
+        uint32_t now = NowMs();
         if (m_packet_list.size() >= MAX_PACKET_NUMBER) {
             m_packet_list.pop_front();
         }
-        Uint8Array packet(data, data+size);
+        auto packet = new MyPacket();
+        packet->set(data, size, now);
         m_packet_list.push_back(packet);
         return (m_packet_list.size() >= MAX_PACKET_NUMBER);
     }
@@ -313,10 +345,10 @@ public:
         }
 
         size_t bufferSize = getMaxDecodedSize();
-        int16_t *buffer = new int16_t[bufferSize];
-        std::deque<Uint8Array>::reference packet = m_packet_list.front();
+        int16_t *buffer = m_alloc.get(bufferSize); // should not be deleted
+        auto packet = m_packet_list.front();
 
-        size_t iret = decodePacket(packet, buffer, bufferSize);
+        size_t iret = decodePacket(packet->data(), buffer, bufferSize);
         if (iret > 0) {
             iret = iret * m_channels; // total output samples
             //LOGI("[dec] output samples size="<<iret<<", channels="<<channels<<", "<<m_channels<<","<<bufferSize);
@@ -324,23 +356,23 @@ public:
                 int iret2 = m_resampler->Push(buffer, iret);
                 if (iret2 > 0) {
                     const int16_t* newData = m_resampler->Data();
-                    *out = Int16Array(newData, newData + iret2);
+                    out->assign(newData, newData + iret2);
                     iret = iret2;
                 } else if (iret2 == 0) {
-                    *out = Int16Array(buffer, buffer + iret);
+                    out->assign(buffer, buffer + iret);
                 } else {
                     LOGE("[dec] input resampler failed");
                     iret = -1;
                 }
             } else {
-                *out = Int16Array(buffer, buffer + iret);
+                out->assign(buffer, buffer + iret);
             }
         } else {
             LOGE("[dec] decode error="<<iret);
         }
 
+        delete packet;
         m_packet_list.pop_front();
-        delete []buffer;
         return (iret > 0);
     }
     virtual bool check_output_paramters(int *sampleRate, int *channels) {
@@ -370,7 +402,8 @@ protected:
 
 private:
     MyResampler *m_resampler = nullptr;
-    std::deque<Uint8Array> m_packet_list;
+    std::deque<MyPacket *> m_packet_list;
+    MyAlloc<int16_t> m_alloc;
 };
 
 class CG711Decoder : public BaseDecoder {
@@ -487,7 +520,7 @@ void Decoder_delete(audio::Decoder *self)
 }
 
 EMSCRIPTEN_KEEPALIVE
-int Decoder_input(audio::Decoder *self, const char* data, size_t size)
+int Decoder_input(audio::Decoder *self, const char* data, int size)
 {
     return self->input(data,size);
 }

@@ -5,6 +5,7 @@
 #include <vector>
 #include <deque>
 #include <iostream>
+#include <algorithm>
 
 #include <stdint.h>
 

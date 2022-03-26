@@ -3,6 +3,7 @@
 #include <map>
 #include "acodec.h"
 #include "base/rtputils.h"
+#include "base/buffer.h"
 
 namespace audio {
 
@@ -35,7 +36,7 @@ public:
         m_ssrc = ssrc;
         m_ptype = payloadType;
     }
-    int input(const int16_t *data, int size, int sampleRate, int channels) {
+    int input(const int16_t *data, size_t size, int sampleRate, int channels) {
         if (m_enc) return m_enc->input(data, size, sampleRate, channels);
         return -1;
     }
@@ -44,27 +45,26 @@ public:
         int16_t s = (value < 0) ? (value * 0x8000) : (value * 0x7FFF);
         return s;
     }
-    int input2(const float *data, int size, int sampleRate, int channels) {
+    int input2(const float *data, size_t size, int sampleRate, int channels) {
         if (!(channels == 1 || channels == 2)) {
             return -1;
         }
 
         // convert float to int16_t
-        Int16Array array;
-        array.resize(size);
+        int16_t* array = m_alloc.get(size); // should not be deleted
         if (channels == 1) {
-            for (int i=0; i < size; i++) {
+            for (size_t i=0; i < size; i++) {
                 array[i] = clipFloatToInt16(data[i]);
             }
         } else {
             // convert planar to interleaved
-            int size_per_channel = size / 2;
-            for (int i=0; i < size_per_channel; i++) {
+            size_t size_per_channel = size / 2;
+            for (size_t i=0; i < size_per_channel; i++) {
                 array[i*2] = clipFloatToInt16(data[i]);
                 array[i*2+1] = clipFloatToInt16(data[i + size_per_channel]);
             }
         }
-        return input(&array[0], size, sampleRate, channels);
+        return input(array, size, sampleRate, channels);
     }
     bool output(String *out) {
         if (m_enc && out) {
@@ -119,6 +119,8 @@ private:
     float m_frame_size = 20.0f;
     uint32_t m_delta_ts = 0;
     uint32_t m_last_time = 0;
+
+    MyAlloc<int16_t> m_alloc;
 };
 
 // RemoteStream
@@ -190,16 +192,16 @@ public:
         size_t size = tmpOut.size();
 
         // convert int16_t to float
+        out->resize(size);
         auto &array = *out;
-        array.resize(size);
         if (outputChannels == 1) {
             for (size_t i=0; i < size; i++) {
                 array[i] = clipInt16ToFloat(data[i]);
             }
         } else {
             // convert interleaved to planar
-            int size_per_channel = size / outputChannels;
-            for (int i=0; i < size_per_channel; i++) {
+            size_t size_per_channel = size / outputChannels;
+            for (size_t i=0; i < size_per_channel; i++) {
                 array[i] = clipInt16ToFloat(data[i*2]);
                 array[i+size_per_channel] = clipInt16ToFloat(data[i*2+1]);
             }
@@ -291,7 +293,7 @@ void RemoteStream_registerPayloadType(audio::RemoteStream *self,
 }
 
 EMSCRIPTEN_KEEPALIVE
-int RemoteStream_input(audio::RemoteStream *self, const char *data, size_t size)
+int RemoteStream_input(audio::RemoteStream *self, const char *data, int size)
 {
     return self->input(data, size);
 }
