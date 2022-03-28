@@ -67,6 +67,10 @@ Encoder.prototype.setBitrate = function(bitrate)
 // @param samples: Int16Array of interleaved (if multiple channels) samples
 Encoder.prototype.input = function(samples, samplerate, channels)
 {
+    if (!samples) {
+        return Module._Encoder_input(this.enc, null, 0, 0, 0);
+    }
+
     var nbytes = samples.length*samples.BYTES_PER_ELEMENT;
     var ptr = Module._malloc(nbytes);
     var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, nbytes);
@@ -113,6 +117,10 @@ Decoder.prototype.destroy = function()
 // @param packet: Uint8Array
 Decoder.prototype.input = function(packet)
 {
+    if (!packet) {
+        return Module._Decoder_input(this.dec, null, 0);
+    }
+
     var nbytes = packet.length*packet.BYTES_PER_ELEMENT;
     var ptr = Module._malloc(nbytes);
     var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, nbytes);
@@ -186,6 +194,10 @@ LocalStream.prototype.setRtpParameters = function(ssrc, payloadtype)
 // @param samples: Int16Array of interleaved (if multiple channels) samples
 LocalStream.prototype.input = function(samples, samplerate, channels)
 {
+    if (!samples) {
+        return Module._LocalStream_input(this.stream, null, 0, 0, 0);
+    }
+
     var nbytes = samples.length*samples.BYTES_PER_ELEMENT;
     var ptr = Module._malloc(nbytes);
     var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, nbytes);
@@ -199,6 +211,10 @@ LocalStream.prototype.input = function(samples, samplerate, channels)
 // add samples to the local-stream encoder buffer. (samples.BYTES_PER_ELEMENT is 4)
 // @param samples: Float32Array of planar (if multiple channels) samples
 LocalStream.prototype.input2 = function(samples, sampleRate, channels) {
+    if (!samples) {
+        return Module._LocalStream_input2(this.stream, null, 0, 0, 0);
+    }
+
     var nbytes = samples.length*samples.BYTES_PER_ELEMENT;
     var ptr = Module._malloc(nbytes);
     var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, nbytes);
@@ -254,6 +270,10 @@ RemoteStream.prototype.registerPayloadType = function(payloadtype, codec, sample
 // @param packet: Uint8Array
 RemoteStream.prototype.input = function(packet)
 {
+    if (!packet) {
+        return Module._RemoteStream_input(this.stream, null, 0);
+    }
+
     var nbytes = packet.length*packet.BYTES_PER_ELEMENT;
     var ptr = Module._malloc(nbytes);
     var pdata = new Uint8Array(Module.HEAPU8.buffer, ptr, nbytes);

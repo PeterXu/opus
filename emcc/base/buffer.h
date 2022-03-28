@@ -68,9 +68,13 @@ public:
     uint32_t last_time() {
         return m_lastTime;
     }
+    void compute_energy() {
+        m_energy = ComputeAudioLevel(&m_data[0], m_data.size());
+    }
 private:
     uint32_t m_firstTime = 0;
     uint32_t m_lastTime = 0;
+    uint32_t m_energy = 0;
     Int16Array m_data;
 }; 
 

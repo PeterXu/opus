@@ -47,6 +47,10 @@ public:
         return s;
     }
     int input2(const float *data, size_t size, int sampleRate, int channels) {
+        if (!data || size <= 0) {
+            return input(NULL, 0, 0, 0);
+        }
+
         if (!(channels == 1 || channels == 2)) {
             return -1;
         }
@@ -124,14 +128,13 @@ private:
     MyAlloc<int16_t> m_alloc;
 };
 
-// RemoteStream
+// RemoteStream: each ssrc should be allocated a remote-stream
 
 class RemoteStream {
 public:
     RemoteStream() {}
     ~RemoteStream() {
-        std::map<int, Decoder*>::iterator it = m_decs.begin();
-        for (; it != m_decs.end(); it++) {
+        for (auto it = m_decs.begin(); it != m_decs.end(); it++) {
             delete it->second;
         }
         m_decs.clear();
@@ -157,6 +160,10 @@ public:
                     m_last_dec = dec;
                 }
             }
+        } else {
+            if (m_last_dec && (!data || size <= 0)) {
+                iret = m_last_dec->input(NULL, 0); 
+            }
         }
         return iret;
     }
@@ -177,13 +184,6 @@ public:
             return false;
         }
 
-        int outputSampleRate = sampleRate;
-        int outputChannels = channels;
-        if (!m_last_dec->check_output_paramters(&outputSampleRate, &outputChannels)) {
-            LOGE("[remote] output2 invalid parameters="<<sampleRate<<"/"<<channels);
-            return false;
-        }
-
         Int16Array tmpOut;
         if (!m_last_dec->output(&tmpOut, sampleRate, channels)) {
             return false;
@@ -195,13 +195,13 @@ public:
         // convert int16_t to float
         out->resize(size);
         auto &array = *out;
-        if (outputChannels == 1) {
+        if (channels == 1) {
             for (size_t i=0; i < size; i++) {
                 array[i] = clipInt16ToFloat(data[i]);
             }
         } else {
             // convert interleaved to planar
-            size_t size_per_channel = size / outputChannels;
+            size_t size_per_channel = size / channels;
             for (size_t i=0; i < size_per_channel; i++) {
                 array[i] = clipInt16ToFloat(data[i*2]);
                 array[i+size_per_channel] = clipInt16ToFloat(data[i*2+1]);

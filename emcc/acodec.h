@@ -19,8 +19,7 @@ class Decoder {
 public:
     virtual ~Decoder() {}
     virtual int input(const char *data, size_t size) = 0;
-    virtual bool output(Int16Array *out, int sampleRate, int channels) = 0;
-    virtual bool check_output_paramters(int *sampleRate, int *channels) = 0;
+    virtual bool output(Int16Array *out, int &sampleRate, int &channels) = 0;
 };
 Decoder* CreateDecoder(int codec, int sampleRate, int channels);
 

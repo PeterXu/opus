@@ -79,21 +79,26 @@ public:
     int check_samples() {
         if (m_samples_list.size() >= MAX_SAMPLES_NUMBER) {
             int delta = std::max(int(m_frameSize-4), 5);
-            //LOGI("now="<<NowMs()<<", last="<<m_last_output_time);
-            return NowMs() >= m_last_output_time + delta ? 1 : 0;
+            //LOGI("now="<<NowMs()<<", last="<<m_last_output_time<<", delta="<<delta);
+            return (NowMs() >= m_last_output_time + delta) ? 1 : 0;
         } else {
             return 0;
         }
     }
     void push_samples(MySamples *samples) {
-        while (m_samples_list.size() >= MAX_SAMPLES_NUMBER) {
-            auto samples = m_samples_list.front();
-            delete samples;
+        while (m_samples_list.size() > MAX_SAMPLES_NUMBER) {
+            auto one = m_samples_list.front();
+            delete one;
             m_samples_list.pop_front();
         }
+        samples->compute_energy();
         m_samples_list.push_back(samples);
     }
     virtual int input(const int16_t* data, size_t size, int sampleRate, int channels) {
+        if (!data || size <= 0) {
+            return check_samples();
+        }
+
         if (!init_resampler(sampleRate, channels)) {
             LOGE("[enc] input invalid parameters="<<sampleRate<<"/"<<channels);
             return -1;
@@ -161,12 +166,12 @@ public:
             iret = encodePacket(samples->data(), codecFrameSamplesSize, (uint8_t *)buffer, bufferSize);
             if (iret > 0) {
                 out->assign(buffer, buffer + iret);
-                m_last_output_time = NowMs();
             } else {
                 LOGE("[enc] encode error="<<iret);
             }
             delete samples;
             m_samples_list.pop_front();
+            m_last_output_time = NowMs();
         }
         return (iret > 0);
     }
@@ -289,8 +294,7 @@ class EmptyDecoder : public Decoder {
 public:
     virtual ~EmptyDecoder() {}
     virtual int input(const char *data, size_t size) {return -1;}
-    virtual bool output(Int16Array *out, int sampleRate, int channels) {return false;}
-    virtual bool check_output_paramters(int *sampleRate, int *channels) {return false;}
+    virtual bool output(Int16Array *out, int &sampleRate, int &channels) {return false;}
 };
 
 class BaseDecoder : public Decoder {
@@ -332,17 +336,48 @@ public:
         }
         return true;
     }
+    int check_packet() {
+        uint32_t now = NowMs();
+        // support min frame-size 10ms.
+        int frameSize = std::max(int(m_frameSize+0.5f), 10);
+
+        int minTimeout = 100;
+        int minNumber = minTimeout/frameSize;
+        int maxTimeout = 3000;
+        int maxNumber = maxTimeout/frameSize;
+        int midTimeout = minTimeout + frameSize*2;
+        int midNumber = midTimeout/frameSize;
+
+        int iret = 0;
+        while(!m_packet_list.empty()) {
+            auto packet = m_packet_list.front();
+            if (now >= packet->time() + maxTimeout || m_packet_list.size() >= maxNumber) {
+                delete packet;
+                m_packet_list.pop_front();
+            } else {
+                if (now >= packet->time() + midTimeout || m_packet_list.size() >= midNumber) {
+                    int delta = frameSize * 0.4f;
+                    iret = (now >= m_last_output_time + delta) ? 2 : 0;
+                } else if (now >= packet->time() + minTimeout || m_packet_list.size() >= minNumber) {
+                    int delta = frameSize * 0.8f;
+                    iret = (now >= m_last_output_time + delta) ? 1 : 0;
+                }
+                break;
+            }
+        }
+
+        return iret;
+    }
     virtual int input(const char *data, size_t size) {
         uint32_t now = NowMs();
-        if (m_packet_list.size() >= MAX_PACKET_NUMBER) {
-            m_packet_list.pop_front();
+        if (data != NULL && size > 0) {
+            auto packet = new MyPacket();
+            packet->set(data, size, now);
+            m_packet_list.push_back(packet);
         }
-        auto packet = new MyPacket();
-        packet->set(data, size, now);
-        m_packet_list.push_back(packet);
-        return (m_packet_list.size() >= MAX_PACKET_NUMBER);
+        return check_packet();
     }
-    virtual bool output(Int16Array *out, int sampleRate, int channels) {
+    virtual bool output(Int16Array *out, int &sampleRate, int &channels) {
         if (!out || m_packet_list.empty()) {
             return false;
         }
@@ -379,22 +414,22 @@ public:
             LOGE("[dec] decode error="<<iret);
         }
 
+        if (iret > 0) {
+            //uint32_t energy = ComputeAudioLevel(&((*out)[0]), out->size());
+            if (m_resampler) {
+                sampleRate = m_resampler->GetOutFreq();
+                channels = m_resampler->GetOutChannels();
+            } else {
+                sampleRate = m_sampleRate;
+                channels = m_channels;
+            }
+            m_frameSize = iret/(sampleRate/1000.0*channels);
+        }
+
         delete packet;
         m_packet_list.pop_front();
+        m_last_output_time = NowMs();
         return (iret > 0);
-    }
-    virtual bool check_output_paramters(int *sampleRate, int *channels) {
-        if (!sampleRate || !channels) {
-            return false;
-        }
-        if (init_resampler(*sampleRate, *channels)) {
-            if (!m_resampler) {
-                *sampleRate = m_sampleRate;
-                *channels = m_channels;
-            }
-            return true;
-        }
-        return false;
     }
 
 protected:
@@ -411,6 +446,8 @@ protected:
 private:
     MyResampler *m_resampler = nullptr;
     std::deque<MyPacket *> m_packet_list;
+    float m_frameSize = 0.0f;
+    uint32_t m_last_output_time = 0;
     MyAlloc<int16_t> m_alloc;
 };
 

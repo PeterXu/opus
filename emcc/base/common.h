@@ -17,7 +17,7 @@ typedef std::vector<float> Float32Array;
 #define LOGI(...) std::cout<<__VA_ARGS__<<std::endl
 #define LOGE(...) std::cerr<<__VA_ARGS__<<std::endl
 
-#define MAX_SAMPLES_NUMBER (7)
+#define MAX_SAMPLES_NUMBER (5)
 #define MAX_PACKET_NUMBER  (5)
 
 #define MIN_SAMPLE_RATE (8000)
@@ -36,5 +36,6 @@ String getCodecName(int codec);
 uint32_t NowMs();
 int RandNumber();
 uint32_t RandTimestamp();
+int ComputeAudioLevel(int16_t* data, size_t size);
 
 #endif // _BASE_COMMON_H_
