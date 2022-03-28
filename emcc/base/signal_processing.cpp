@@ -1,5 +1,6 @@
 #include "base/signal_processing.h"
 #include "spl/resampler.h"
+#include "base/common.h"
 
 void MonoToStereo(const int16_t* src_audio, size_t samples_per_channel, int16_t* dst_audio) {
   for (size_t i = 0; i < samples_per_channel; i++) {
@@ -85,6 +86,7 @@ void MyResampler::Reset(int in_freq, int in_channels, int out_freq, int out_chan
             }
         }
     }
+    LOGI("MyResampler Reset, state="<<m_state);
 }
 
 int MyResampler::ExpectMaxSize(size_t src_len) {
@@ -124,7 +126,7 @@ int MyResampler::Push(const int16_t* src_audio, size_t src_len, int16_t* dst_aud
         }
         break;
     case kStereoToMono:
-        if (max_len < samples_mono) {
+        if (max_len >= samples_mono) {
             StereoToMono(src_audio, samples_mono, dst_audio);
             return samples_mono;
         }

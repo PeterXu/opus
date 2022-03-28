@@ -52,11 +52,13 @@ public:
     virtual void set_bitrate(int bitrate) {}
 
     bool init_resampler(int sampleRate, int channels) {
-        //LOGI("[enc] input parameters="<<sampleRate<<"/"<<channels);
         if ((sampleRate == 0 && channels == 0) ||
             (sampleRate == m_sampleRate && channels == m_channels)) {
-            delete m_resampler;
-            m_resampler = NULL;
+            if (m_resampler) {
+                LOGI("[enc] resampler not needed, input="<<sampleRate<<"/"<<channels);
+                delete m_resampler;
+                m_resampler = NULL;
+            }
             return true;
         }
         if (sampleRate < MIN_SAMPLE_RATE ||
@@ -66,8 +68,10 @@ public:
             return false;
         }
         if (m_resampler == NULL) {
+            LOGI("[enc] resampler init, input="<<sampleRate<<"/"<<channels<<", output="<<m_sampleRate<<"/"<<m_channels);
             m_resampler = new MyResampler(sampleRate, channels, m_sampleRate, m_channels);
-        } else {
+        } else if (m_resampler->GetInFreq() != sampleRate || m_resampler->GetInChannels() != channels) {
+            LOGI("[enc] resampler reset, new input="<<sampleRate<<"/"<<channels);
             m_resampler->Reset(sampleRate, channels, m_sampleRate, m_channels);
         }
         return true;
@@ -132,7 +136,7 @@ public:
                     // nop and copy next
                     push_samples(samples);
                 } else {
-                    LOGE("[enc] input resampler failed");
+                    LOGE("[enc] input resampler failed, ret="<<iret<<", samples="<<samples->size());
                     delete samples;
                     return -1;
                 }
@@ -304,11 +308,13 @@ public:
         m_packet_list.clear();
     }
     bool init_resampler(int sampleRate, int channels) {
-        //LOGI("[dec] output parameters="<<sampleRate<<"/"<<channels);
         if ((sampleRate == 0 && channels == 0) ||
             (sampleRate == m_sampleRate && channels == m_channels)) {
-            delete m_resampler;
-            m_resampler = NULL;
+            if (m_resampler) {
+                LOGI("[dec] resampler not needed, output="<<sampleRate<<"/"<<channels);
+                delete m_resampler;
+                m_resampler = NULL;
+            }
             return true;
         }
         if (sampleRate < MIN_SAMPLE_RATE ||
@@ -318,8 +324,10 @@ public:
             return false;
         }
         if (m_resampler == NULL) {
+            LOGI("[dec] resampler init, input="<<m_sampleRate<<"/"<<m_channels<<", output="<<sampleRate<<"/"<<channels);
             m_resampler = new MyResampler(m_sampleRate, m_channels, sampleRate, channels);
         } else {
+            LOGI("[dec] resampler reset, new output="<<sampleRate<<"/"<<channels);
             m_resampler->Reset(m_sampleRate, m_channels, sampleRate, channels);
         }
         return true;

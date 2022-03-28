@@ -20,6 +20,7 @@ public:
         if (isCodecValid(codec)) {
             if (m_enc) delete m_enc;
             m_enc = CreateEncoder(codec, frameSize, sampleRate, channels, bitrate, isVoip);
+            //m_enc->set_complexity(5);
             m_frame_size = frameSize;
             m_delta_ts = sampleRate/1000*frameSize*channels;
             LOGI("[local] set frame-size="<<frameSize<<", delta-ts="<<m_delta_ts);

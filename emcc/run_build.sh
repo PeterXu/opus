@@ -2,7 +2,7 @@
 
 #flags="-O2 --memory-init-file 0"              # asm.js version
 flags="-O2 -s WASM=1 -s ALLOW_MEMORY_GROWTH=1" # wasm version
-flags="$flags -gsource-map"
+flags="$flags -gsource-map" # debug
 flags="$flags -s SINGLE_FILE=1"
 
 srcs="acodec.cpp jarray.cpp"

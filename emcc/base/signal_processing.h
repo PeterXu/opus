@@ -37,6 +37,12 @@ public:
     int Push(const int16_t* src_audio, size_t src_len);
     const int16_t* Data() {return m_buffer;}
 
+    int GetInFreq() {return m_in_freq;}
+    int GetInChannels() {return m_in_channels;}
+
+    int GetOutFreq() {return m_out_freq;}
+    int GetOutChannels() {return m_out_channels;}
+
 private:
     int16_t* AllocBuffer(int size);
 
