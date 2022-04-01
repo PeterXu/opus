@@ -40,7 +40,7 @@ uint32_t RandTimestamp() {
     ts = rand();
     ts = ts << 16;
     ts += rand();
-    ts &= 0x3fffffff;
+    ts &= 0x07ffffff;
     return ts;
 }
 

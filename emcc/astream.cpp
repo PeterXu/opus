@@ -23,6 +23,7 @@ public:
             //m_enc->set_complexity(5);
             m_frame_size = frameSize;
             m_delta_ts = sampleRate/1000*frameSize*channels;
+            m_timestamp = 0;
             LOGI("[local] set frame-size="<<frameSize<<", delta-ts="<<m_delta_ts);
         } else {
             LOGE("[local] invalid codec="<<codec);
@@ -145,6 +146,9 @@ public:
             if (dec == m_last_dec) m_last_dec = NULL;
             if (dec) delete dec;
             m_decs[payloadType] = CreateDecoder(codec, sampleRate, channels);
+            LOGI("[remote] register codec="<<getCodecName(codec)<<"/"<<payloadType<<"/"<<sampleRate<<"/"<<channels);
+        } else {
+            LOGE("[remote] register invalid codec="<<codec);
         }
     }
     int input(const char *data, size_t size) {
@@ -158,11 +162,17 @@ public:
                 if (dec) {
                     iret = dec->input(data + headLen, size - headLen);
                     m_last_dec = dec;
+                } else {
+                    LOGE("[remote] input un-registered rtp ptype="<<ptype);
                 }
+            } else {
+                LOGE("[remote] input invalid rtp header, size="<<size);
             }
         } else {
             if (m_last_dec && (!data || size <= 0)) {
                 iret = m_last_dec->input(NULL, 0); 
+            } else {
+                LOGE("[remote] input invalid data, size="<<size);
             }
         }
         return iret;
