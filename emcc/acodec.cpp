@@ -293,8 +293,8 @@ Encoder* CreateEncoder(int codec, float frameSize, int sampleRate, int channels,
 class EmptyDecoder : public Decoder {
 public:
     virtual ~EmptyDecoder() {}
-    virtual int input(const char *data, size_t size) {return -1;}
-    virtual bool output(Int16Array *out, int &sampleRate, int &channels) {return false;}
+    virtual int input(const char *data, size_t size, int seq) {return -1;}
+    virtual bool output(Int16Array *out, int &sampleRate, int &channels, int &seq) {return false;}
 };
 
 class BaseDecoder : public Decoder {
@@ -368,16 +368,16 @@ public:
 
         return iret;
     }
-    virtual int input(const char *data, size_t size) {
+    virtual int input(const char *data, size_t size, int seq) {
         uint32_t now = NowMs();
         if (data != NULL && size > 0) {
-            auto packet = new MyPacket();
+            auto packet = new MyPacket(seq);
             packet->set(data, size, now);
             m_packet_list.push_back(packet);
         }
         return check_packet();
     }
-    virtual bool output(Int16Array *out, int &sampleRate, int &channels) {
+    virtual bool output(Int16Array *out, int &sampleRate, int &channels, int &seq) {
         if (!out || m_packet_list.empty()) {
             return false;
         }
@@ -390,6 +390,7 @@ public:
         size_t bufferSize = getMaxDecodedSize();
         int16_t *buffer = m_alloc.get(bufferSize); // should not be deleted
         auto packet = m_packet_list.front();
+        seq = packet->seq();
 
         size_t iret = decodePacket(packet->data(), buffer, bufferSize);
         if (iret > 0) {
@@ -567,13 +568,14 @@ void Decoder_delete(audio::Decoder *self)
 EMSCRIPTEN_KEEPALIVE
 int Decoder_input(audio::Decoder *self, const char* data, int size)
 {
-    return self->input(data,size);
+    return self->input(data,size,0);
 }
 
 EMSCRIPTEN_KEEPALIVE
 bool Decoder_output(audio::Decoder *self, Int16Array *out, int sampleRate, int channels)
 {
-    return self->output(out, sampleRate, channels);
+    int seq = 0;
+    return self->output(out, sampleRate, channels, seq);
 }
 
 } // extern "C"

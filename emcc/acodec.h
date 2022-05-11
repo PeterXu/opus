@@ -18,8 +18,8 @@ Encoder* CreateEncoder(int codec, float frameSize, int sampleRate, int channels,
 class Decoder {
 public:
     virtual ~Decoder() {}
-    virtual int input(const char *data, size_t size) = 0;
-    virtual bool output(Int16Array *out, int &sampleRate, int &channels) = 0;
+    virtual int input(const char *data, size_t size, int seq) = 0;
+    virtual bool output(Int16Array *out, int &sampleRate, int &channels, int &seq) = 0;
 };
 Decoder* CreateDecoder(int codec, int sampleRate, int channels);
 

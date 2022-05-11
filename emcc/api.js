@@ -300,9 +300,10 @@ RemoteStream.prototype.output = function(samplerate, channels)
 // return samples (planar if multiple channels) as Float32Array (valid until next output call) or null if no output
 RemoteStream.prototype.output2 = function(samplerate, channels)
 {
-    var ok = Module._RemoteStream_output2(this.stream, this.outf, samplerate, channels);
-    if (ok) {
-        return new Float32Array(Module.HEAPU8.buffer, Module._Float32Array_data(this.outf), Module._Float32Array_size(this.outf));
+    var seq = Module._RemoteStream_output2(this.stream, this.outf, samplerate, channels);
+    if (seq >= 0) {
+        var samples = new Float32Array(Module.HEAPU8.buffer, Module._Float32Array_data(this.outf), Module._Float32Array_size(this.outf));
+        return {samples: samples, sequence: seq};
     } else {
         return null;
     }

@@ -80,7 +80,10 @@ private:
 
 class MyPacket {
 public:
-    MyPacket() {}
+    MyPacket(int seq) : m_seq(seq) {}
+    int seq() {
+        return m_seq;
+    }
     size_t size() {
         return m_data.size();
     }
@@ -96,6 +99,7 @@ public:
     }
 
 private:
+    int m_seq = -1;
     uint32_t m_time = 0;
     Uint8Array m_data;
 };

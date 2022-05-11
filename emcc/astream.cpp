@@ -158,9 +158,11 @@ public:
             if (cricket::GetRtpHeaderLen(data, size, &headLen)) {
                 int ptype = 0;
                 cricket::GetRtpPayloadType(data, size, &ptype);
+                int seqNum = 0;
+                cricket::GetRtpSeqNum(data, size, &seqNum);
                 Decoder* dec = m_decs[ptype];
                 if (dec) {
-                    iret = dec->input(data + headLen, size - headLen);
+                    iret = dec->input(data + headLen, size - headLen, seqNum);
                     m_last_dec = dec;
                 } else {
                     LOGE("[remote] input un-registered rtp ptype="<<ptype);
@@ -170,7 +172,7 @@ public:
             }
         } else {
             if (m_last_dec && (!data || size <= 0)) {
-                iret = m_last_dec->input(NULL, 0); 
+                iret = m_last_dec->input(NULL, 0, 0); 
             } else {
                 LOGE("[remote] input invalid data, size="<<size);
             }
@@ -179,24 +181,27 @@ public:
     }
     bool output(Int16Array *out, int sampleRate, int channels) {
         if (m_last_dec && out) {
-            return m_last_dec->output(out, sampleRate, channels);
+            int tmpSeq = 0;
+            return m_last_dec->output(out, sampleRate, channels, tmpSeq);
         } else {
             return false;
         }
     }
     static inline float clipInt16ToFloat(int16_t value) {
-        float s = (value < 0) ? (value * 1.0f / 0x8000) : (value * 1.0f / 0x7FFF);
-        s = (s >= 1.0f) ? 1.0f : ((s <= -1.0f) ? -1.0f : s);
+        //float s = (value < 0) ? (value * 1.0f / 0x8000) : (value * 1.0f / 0x7FFF);
+        //s = (s >= 1.0f) ? 1.0f : ((s <= -1.0f) ? -1.0f : s);
+        float s = (1.f/32768.f) * value;
         return s;
     }
-    bool output2(Float32Array *out, int sampleRate, int channels) {
+    int output2(Float32Array *out, int sampleRate, int channels) {
         if (!m_last_dec || !out) {
-            return false;
+            return -1;
         }
 
+        int tmpSeq = 0;
         Int16Array tmpOut;
-        if (!m_last_dec->output(&tmpOut, sampleRate, channels)) {
-            return false;
+        if (!m_last_dec->output(&tmpOut, sampleRate, channels, tmpSeq)) {
+            return -1;
         }
 
         const int16_t *data = &tmpOut[0];
@@ -217,7 +222,7 @@ public:
                 array[i+size_per_channel] = clipInt16ToFloat(data[i*2+1]);
             }
         }
-        return true;
+        return tmpSeq;
     }
 
 private:
@@ -316,7 +321,7 @@ bool RemoteStream_output(audio::RemoteStream *self, Int16Array *out, int sampleR
 }
 
 EMSCRIPTEN_KEEPALIVE
-bool RemoteStream_output2(audio::RemoteStream *self, Float32Array *out, int sampleRate, int channels)
+int RemoteStream_output2(audio::RemoteStream *self, Float32Array *out, int sampleRate, int channels)
 {
     return self->output2(out, sampleRate, channels);
 }
